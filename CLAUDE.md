@@ -17,8 +17,7 @@ Common operations:
 | --- | --- |
 | See status / working copy | `jj status` |
 | View history | `jj log` |
-| Commit the current change | `jj commit -m "message"` |
-| Finish current change, start a new one | `jj new` |
+| Commit the current change | `jj commit -m "message"` (NOT `jj describe` + `jj new`) |
 | Edit an earlier change | `jj edit <change-id>` |
 | Move a bookmark (branch) to current change | `jj bookmark set main -r @` |
 | Push to a Git remote | `jj git push` |
@@ -26,7 +25,9 @@ Common operations:
 
 Notes:
 - jj has no staging area — the working copy *is* a commit and is snapshotted
-  automatically. Describe it with `jj describe`, then `jj new` to start the next.
+  automatically. **Always finalize with `jj commit -m "..."`** — it describes the
+  current change and starts a fresh one in a single step. Do not use
+  `jj describe` + `jj new` to commit.
 - "Branches" are **bookmarks** in jj and do not move automatically; advance
   `main` explicitly with `jj bookmark set main -r @-` (or `-r @`) when a change
   is ready.
