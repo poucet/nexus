@@ -1,6 +1,9 @@
 # Rust build artifacts
 /target/
 
+# Jujutsu (jj) — this repo is colocated, so jj manages .git but .jj is local
+/.jj/
+
 # These should not be committed (lockfile IS committed — see below)
 **/*.rs.bk
 
