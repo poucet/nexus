@@ -1,0 +1,13 @@
+# Rust build artifacts
+/target/
+
+# These should not be committed (lockfile IS committed — see below)
+**/*.rs.bk
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store

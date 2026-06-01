@@ -1,0 +1,14 @@
+# Cargo aliases for the xtask build helper. These mirror the workflow used in
+# the sibling `droplets` project so the muscle memory carries over.
+[alias]
+xtask = "run --package xtask --"
+
+# Build + bundle the wrapper plugin for the current platform.
+bundle = "run --package xtask -- build"
+bundle-debug = "run --package xtask -- build --profile debug"
+bundle-release = "run --package xtask -- build --profile release"
+bundle-clap = "run --package xtask -- build --format clap"
+bundle-vst3 = "run --package xtask -- build --format vst3"
+
+# Build, bundle, and install into the user's CLAP/VST3 plugin folders.
+install-plugin = "run --package xtask -- install"

@@ -1,0 +1,26 @@
+[package]
+name = "nexus-wrap"
+description = "A VST3/CLAP plugin that hosts and wraps another VST3/CLAP plugin."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# Single source of truth for plugin bundle naming and identifiers. Read by the
+# xtask bundler (via `cargo metadata`) so there is no separate bundler.toml to
+# keep in sync. A build script can later expose these to the plugin descriptor.
+[package.metadata.bundle]
+display_name = "Nexus"
+vendor = "Simply Chris"
+clap_bundle_id = "com.simply-chris.nexus"
+vst3_bundle_id = "com.simply-chris.nexus.vst3"
+
+[lib]
+# Exported as a shared library so it can be loaded by a DAW as a plugin.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nexus-host.workspace = true
+log.workspace = true
