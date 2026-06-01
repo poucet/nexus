@@ -17,7 +17,7 @@ Common operations:
 | --- | --- |
 | See status / working copy | `jj status` |
 | View history | `jj log` |
-| Describe the current change | `jj describe -m "message"` |
+| Commit the current change | `jj commit -m "message"` |
 | Finish current change, start a new one | `jj new` |
 | Edit an earlier change | `jj edit <change-id>` |
 | Move a bookmark (branch) to current change | `jj bookmark set main -r @` |
