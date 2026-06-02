@@ -10,8 +10,9 @@ progress / ✅ done.
 | Task | Status | Pri | Feature | Complexity |
 |------|--------|-----|---------|------------|
 | T1  | ✅ | P0 | 1 Discovery | S |
-| T2  | 🔄 | P0 | 1 Discovery | S |
+| T2  | ✅ | P0 | 1 Discovery | S |
 | T3  | ⬜ | P0 | 1 Discovery | M |
+| T25 | ✅ | P1 | 1 Discovery | S |
 | T4  | ⬜ | P0 | 2 Host core | M |
 | T5  | ⬜ | P0 | 2 Host core | S |
 | T6  | ⬜ | P0 | 3 CLAP | M |
@@ -44,7 +45,8 @@ plugins with enough metadata (name, vendor, format, path) to display and load.
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
 | ✅ | T1 | Define macOS plugin search paths for CLAP + VST3 (user `~/Library/Audio/Plug-Ins/{CLAP,VST3}` and system `/Library/Audio/Plug-Ins/{CLAP,VST3}`) | `crates/nexus-host/src/discovery/paths.rs` — `search_paths(format)` + pure `search_paths_in(home, format)`; user scope before system. 3 unit tests. |
-| 🔄 | T2 | Filesystem scan → `Vec<(PluginFormat, bundle_path)>`; CLAP = `*.clap` bundles, VST3 = `*.vst3` bundles | new `crates/nexus-host/src/discovery/scan.rs` (`walkdir`). Don't dlopen here — just locate bundles. |
+| ✅ | T2 | Filesystem scan → `Vec<(PluginFormat, bundle_path)>`; CLAP = `*.clap` bundles, VST3 = `*.vst3` bundles | `crates/nexus-host/src/discovery/scan.rs` — `scan(format)` + `scan_all()`; recurses vendor folders (depth-capped) but never descends into a matched bundle; missing dirs non-fatal. Used `std::fs` recursion, not `walkdir`. 5 tests. |
+| ✅ | T25 | Config file with custom CLAP/VST3 plugin locations that **extend** the default search paths | `crates/nexus-host/src/discovery/config.rs` — TOML at `~/Library/Application Support/Nexus/config.toml` (override via `NEXUS_CONFIG`); `[plugins] clap=[...] vst3=[...]`; `~` expansion; missing/invalid non-fatal. `paths::search_paths` merges defaults + config, deduped; `scan` picks them up automatically. 6 tests. |
 | ⬜ | T3 | `PluginCatalog` + `PluginRef { format, path, descriptor{ id, name, vendor } }`; assemble by probing each bundle's factory (delegates to CLAP probe T7 / VST3 probe T11) | new `crates/nexus-host/src/discovery/catalog.rs`; re-export from `lib.rs`. Probe failures are logged + skipped, never fatal (folders contain junk). |
 
 ## Feature 2: Format-agnostic host core

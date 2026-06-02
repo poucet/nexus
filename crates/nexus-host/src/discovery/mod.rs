@@ -5,4 +5,6 @@
 //! host scans. Subsequent steps walk those directories and probe each bundle's
 //! factory for its descriptor.
 
+pub mod config;
 pub mod paths;
+pub mod scan;
