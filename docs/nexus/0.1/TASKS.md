@@ -95,7 +95,7 @@ lets you pick audio/MIDI devices.
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
 | ⬜ | T17 | Create `crates/nexus-app` (`eframe`/`egui`), app state, main window; pull in `cpal`/`midir` (Feature 5 lives here); add to workspace members | new crate; update root `Cargo.toml` members + workspace deps. |
-| ⬜ | T18 | Plugin browser panel: list catalog (name / vendor / format), text filter, "Load" action | new `crates/nexus-app/src/browser.rs`. |
+| ⬜ | T18 | Embed `nexus-host`'s wrapper UI (selector + presets + editor frame, T33) in the app window; the app supplies the window handle + the catalog | `crates/nexus-app/src/app.rs`. Replaces a bespoke browser — the chrome is shared with `nexus-wrap`. |
 | ⬜ | T19 | Wire app → `nexus-host`: load selected plugin, start the engine, show status (loaded / playing) | `crates/nexus-app/src/app.rs`. |
 | ⬜ | T31 | **Device-selection UI**: dropdowns for audio output device (and input), sample rate/buffer size, and MIDI input source; apply selection to the engine (restart stream on change) | new `crates/nexus-app/src/devices.rs`. Enumerate via `cpal`/`midir`; persist last choice via the config file (T25). |
 
@@ -116,3 +116,15 @@ both CLAP and VST3 views attach into it.
 |------|---|------|---------------|
 | ⬜ | T23 | Full flow on macOS with real plugins: scan → browse → load (one CLAP **and** one VST3) → play via MIDI keyboard → editor opens and is interactive. Capture findings; note any plugin that misbehaves | manual verification; update `README.md` quickstart. |
 | ⬜ | T24 | Error surfacing: scan/probe/load failures show in the UI and are skipped, never crash the app | `crates/nexus-app` + `nexus-host` error types. |
+
+## Feature 15: Wrapper UI + presets (`nexus-host`, `ui` feature)
+
+The shared host chrome around a hosted plugin — plugin selector, presets, and
+the inner-editor frame — behind an opt-in egui `ui` feature, so `nexus-app` and
+(later) `nexus-wrap` reuse it while the bare library and a web DAW omit egui.
+See [ARCHITECTURE.md](../../designs/ARCHITECTURE.md).
+
+| Done | # | Task | Files / notes |
+|------|---|------|---------------|
+| ⬜ | T32 | Preset model: `Preset { format, plugin_id, path, state: Vec<u8> }` saved/loaded to a `.nexuspreset` file (serde, no UI); recall re-loads the plugin via `Host::load` and restores state (T27) | new `crates/nexus-host/src/preset.rs`. |
+| ⬜ | T33 | egui wrapper UI behind a `ui` feature: plugin selector (from `PluginCatalog`), preset save/recall controls, inner-editor frame (reserve a rect, parent the plugin editor via the GUI ext into a host-supplied window handle) | new `crates/nexus-host/src/ui/`; add `eframe`/`egui` + `raw-window-handle` as `ui`-gated optional deps. Consumed by `nexus-app` (T18) + `nexus-wrap`. |

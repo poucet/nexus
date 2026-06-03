@@ -31,11 +31,17 @@ Implications:
 
 Three layers, decoupled:
 
-1. **`nexus-host`** — UI-agnostic, **device-agnostic** hosting library.
-   Discovery, format-agnostic plugin instances (CLAP via `clack`, VST3 via Rust
-   SDK bindings), and the `PluginInstance` / `AudioProcessor` surface. It has
-   **no audio/MIDI hardware dependency** — it exposes a plugin's `AudioProcessor`
-   for a *driver* to run, and knows nothing about CPAL, MIDI devices, or the UI.
+1. **`nexus-host`** — **device-agnostic** hosting library. Discovery,
+   format-agnostic plugin instances (CLAP via `clack`, VST3 via Rust SDK
+   bindings), the `PluginInstance` / `AudioProcessor` surface, and a **preset
+   model** (plugin identity + opaque state, saved to a file). It has **no
+   audio/MIDI hardware dependency** — it exposes a plugin's `AudioProcessor` for
+   a *driver* to run, and knows nothing about CPAL or MIDI devices.
+
+   It *also* ships an **optional egui "wrapper UI"** behind a `ui` feature
+   (off by default): a plugin selector, preset save/recall controls, and the
+   frame that embeds the inner plugin's editor. This is the one UI that lives in
+   the library, on purpose (see below).
 2. **`nexus-app`** — the standalone driver + UI. Owns the **CPAL** audio devices,
    **MIDI** input (`midir`), and the realtime callback that pulls audio from the
    host's `AudioProcessor` and feeds it MIDI; plus the egui UI, including
@@ -45,6 +51,23 @@ Three layers, decoupled:
 3. **App UI** — swappable. MVP is **egui** (`nexus-app`). The DAW UI is decided
    later and can be web (arrangement/mixer in web, editors as floating native
    windows) while reusing layers 1 and 2.
+
+### Why the wrapper UI lives in `nexus-host` (behind a feature)
+
+A "host around a plugin" — plugin selector, preset save/recall, and the inner
+editor frame — is needed identically by **`nexus-app`** (standalone) and
+**`nexus-wrap`** (the plugin-in-a-DAW, whose *entire* editor is exactly that
+chrome). Putting it in `nexus-host` means `nexus-wrap` gets it **for free**.
+
+To keep that from contradicting the device-/UI-agnostic goal, the wrapper UI is
+gated behind an opt-in **`ui` feature** (egui), off by default:
+
+- `nexus-app` / `nexus-wrap` build with `features = ["ui"]` → free chrome.
+- The bare library, and a future **web** `nexus-daw`, omit the feature → no egui.
+
+Device I/O is *not* given the same treatment — it stays out of `nexus-host`
+entirely (next section), because no consumer of the library wants hardware I/O
+baked in.
 
 ### Why device I/O lives in `nexus-app`, not `nexus-host`
 

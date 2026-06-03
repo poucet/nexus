@@ -32,6 +32,7 @@ sequenced first because it unblocks the engine and UI plumbing that VST3 reuses.
 | [ ] | P0 | 7 | Plugin editor embedding (native child window; CLAP + VST3 views) | L | High — "show the actual plugin" — the other risky piece |
 | [ ] | P0 | 8 | End-to-end integration + macOS verification with real plugins | M | High — proves the whole chain on real CLAP/VST3 |
 | [ ] | P1 | 9 | Error surfacing in UI (scan/load failures don't crash the app) | S | Medium — real plugin folders contain broken/old binaries |
+| [ ] | P0 | 15 | **Wrapper UI + presets** in `nexus-host` (`ui` feature): plugin selector, preset save/recall (identity + state), inner-editor frame — reused by `nexus-app` now and `nexus-wrap` later | L | High — shared host chrome; `nexus-wrap` inherits it for free |
 
 ### Phase 02: Beyond the MVP (not scheduled yet)
 

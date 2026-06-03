@@ -24,13 +24,18 @@ out + MIDI in), and **see its editor** embedded as a native child window.
 - MVP UI is **egui** (single process, parents plugin editors directly). The
   standalone host app lives in a new `nexus-app` crate so `nexus-daw` stays
   reserved for the eventual (likely web) DAW.
-- **Device I/O lives in `nexus-app`, not `nexus-host`.** `nexus-host` is a pure
-  hosting library with no CPAL/MIDI dependency; it exposes a plugin's
-  `AudioProcessor` for *someone else* to drive. `nexus-app` owns the CPAL audio
-  devices, MIDI input (`midir`), the realtime callback, and the UI for picking
-  audio in/out devices and MIDI sources. This is essential: `nexus-wrap` gets
-  its audio/MIDI from the host DAW, so the host library must not pull in
-  hardware I/O.
+- **Device I/O lives in `nexus-app`, not `nexus-host`.** `nexus-host` has no
+  CPAL/MIDI dependency; it exposes a plugin's `AudioProcessor` for *someone
+  else* to drive. `nexus-app` owns the CPAL audio devices, MIDI input
+  (`midir`), the realtime callback, and the UI for picking audio in/out devices
+  and MIDI sources. Essential because `nexus-wrap` gets its audio/MIDI from the
+  host DAW — the library must not pull in hardware I/O.
+- **The wrapper UI lives in `nexus-host`, behind an opt-in `ui` feature** (egui;
+  off by default): plugin selector, preset save/recall, and the inner-editor
+  frame. `nexus-app` and `nexus-wrap` enable it and get that chrome **for free**;
+  the bare library and a future web `nexus-daw` omit the feature (no egui). A
+  **preset** captures plugin identity (format + id + path) + the inner plugin's
+  opaque state, reusing `save_state`/`load_state` (T27).
 - Plugin stack mirrors the sibling `droplets` project: `clack` for CLAP (host
   side here), `clap-wrapper` for VST3 *export* later. VST3 *hosting* in the MVP
   uses Rust VST3 SDK bindings.
@@ -50,7 +55,7 @@ out + MIDI in), and **see its editor** embedded as a native child window.
 
 | Crate | Kind | Role | MVP? |
 | --- | --- | --- | --- |
-| `nexus-host` | lib | Discovery + format-agnostic hosting of CLAP/VST3. **No device I/O.** | yes |
+| `nexus-host` | lib | Discovery + format-agnostic hosting of CLAP/VST3 + preset model + *optional* egui wrapper UI (`ui` feature: selector, presets, editor frame). **No device I/O.** | yes |
 | `nexus-app` | bin | egui standalone: CPAL audio + MIDI (`midir`) setup, the realtime engine, device-selection UI, plugin browser (the 0.1 deliverable) | yes (new) |
 | `nexus-wrap` | cdylib | A plugin that hosts another plugin | later |
 | `nexus-daw` | bin | The AI-first DAW (UI TBD, likely web) | later |
