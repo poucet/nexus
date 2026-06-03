@@ -12,9 +12,11 @@
 pub mod clap;
 pub mod discovery;
 pub mod host;
+pub mod preset;
 pub mod process;
 
 pub use discovery::catalog::{PluginCatalog, PluginRef};
+pub use preset::Preset;
 pub use host::{
     AudioConfig, AudioProcessor, Editor, Host, HostError, ParamInfo, PluginDescriptor,
     PluginFormat, PluginInstance, VoiceInfo,

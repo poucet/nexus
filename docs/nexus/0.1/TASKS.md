@@ -126,5 +126,5 @@ See [ARCHITECTURE.md](../../designs/ARCHITECTURE.md).
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| ⬜ | T32 | Preset model: `Preset { format, plugin_id, path, state: Vec<u8> }` saved/loaded to a `.nexuspreset` file (serde, no UI); recall re-loads the plugin via `Host::load` and restores state (T27) | new `crates/nexus-host/src/preset.rs`. |
+| ✅ | T32 | Preset model: `Preset { format, plugin_id, path, state: Vec<u8> }` saved/loaded to a `.nexuspreset` file (serde, no UI); recall re-loads the plugin via `Host::load` and restores state (T27) | `crates/nexus-host/src/preset.rs` — `Preset` (state base64 in JSON); `capture`/`save_to_file`/`load_from_file`/`recall`. `PluginFormat` is now serde. **Verified: Surge XT captured → file → recalled.** |
 | ⬜ | T33 | egui wrapper UI behind a `ui` feature: plugin selector (from `PluginCatalog`), preset save/recall controls, inner-editor frame (reserve a rect, parent the plugin editor via the GUI ext into a host-supplied window handle) | new `crates/nexus-host/src/ui/`; add `eframe`/`egui` + `raw-window-handle` as `ui`-gated optional deps. Consumed by `nexus-app` (T18) + `nexus-wrap`. |

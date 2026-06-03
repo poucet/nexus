@@ -6,10 +6,12 @@
 //! [`Host::load`] and drive it through [`PluginInstance`], never branching on
 //! VST3 vs. CLAP.
 
+use serde::{Deserialize, Serialize};
+
 use crate::process::ProcessBlock;
 
 /// The plugin format a binary implements.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PluginFormat {
     /// Steinberg VST3.
     Vst3,
@@ -29,6 +31,10 @@ pub enum HostError {
     /// matching factory, etc.).
     #[error("failed to load plugin: {0}")]
     Load(String),
+
+    /// A preset could not be read, written, or parsed.
+    #[error("preset error: {0}")]
+    Preset(String),
 }
 
 /// Static metadata about a plugin, read from its factory *without*
