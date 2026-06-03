@@ -71,6 +71,15 @@ pub struct ParamInfo {
     pub is_modulatable: bool,
 }
 
+/// Polyphony information reported by a plugin's `voice-info` extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VoiceInfo {
+    /// Current number of active voices.
+    pub voice_count: u32,
+    /// Maximum number of voices the plugin can play at once.
+    pub voice_capacity: u32,
+}
+
 /// Audio configuration negotiated with a plugin when it is activated. The host
 /// commits to never handing the plugin a block larger than `max_block_frames`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -123,6 +132,16 @@ pub trait PluginInstance {
     fn load_state(&mut self, data: &[u8]) -> Result<(), HostError> {
         let _ = data;
         Err(HostError::Load("plugin does not support state".into()))
+    }
+
+    /// The plugin's processing latency in samples (0 if it reports none).
+    fn latency(&mut self) -> u32 {
+        0
+    }
+
+    /// The plugin's polyphony info, if it exposes the `voice-info` extension.
+    fn voice_info(&mut self) -> Option<VoiceInfo> {
+        None
     }
 
     /// The plugin's native editor, or `None` if it exposes no GUI.

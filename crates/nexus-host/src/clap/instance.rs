@@ -109,6 +109,14 @@ impl HostPluginInstance for ClapPluginInstance {
     fn load_state(&mut self, data: &[u8]) -> Result<(), HostError> {
         crate::clap::state::load(&mut self.instance, data)
     }
+
+    fn latency(&mut self) -> u32 {
+        crate::clap::info::latency(&mut self.instance)
+    }
+
+    fn voice_info(&mut self) -> Option<crate::host::VoiceInfo> {
+        crate::clap::info::voice_info(&mut self.instance)
+    }
 }
 
 #[cfg(test)]
