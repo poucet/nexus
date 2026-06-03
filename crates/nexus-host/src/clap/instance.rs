@@ -89,6 +89,18 @@ impl HostPluginInstance for ClapPluginInstance {
         // drops the (stopped) audio processor before this. Explicit
         // processor-returning deactivation can be revisited if needed.
     }
+
+    fn params(&mut self) -> Vec<crate::host::ParamInfo> {
+        crate::clap::params::enumerate(&mut self.instance)
+    }
+
+    fn param_value(&mut self, id: u32) -> Option<f64> {
+        crate::clap::params::value(&mut self.instance, id)
+    }
+
+    fn param_value_to_text(&mut self, id: u32, value: f64) -> Option<String> {
+        crate::clap::params::value_to_text(&mut self.instance, id, value)
+    }
 }
 
 #[cfg(test)]

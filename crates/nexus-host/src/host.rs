@@ -46,6 +46,31 @@ pub struct PluginDescriptor {
     pub version: Option<String>,
 }
 
+/// Static information about one plugin parameter (the façade view of a CLAP
+/// `clap_param_info` / VST3 parameter).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamInfo {
+    /// Stable parameter id.
+    pub id: u32,
+    /// Display name, e.g. "Cutoff".
+    pub name: String,
+    /// Module path for tree display, e.g. "Filter/1" (may be empty).
+    pub module: String,
+    pub min_value: f64,
+    pub max_value: f64,
+    pub default_value: f64,
+    /// Value is quantized to integer steps.
+    pub is_stepped: bool,
+    /// Host must not change the value.
+    pub is_readonly: bool,
+    /// Not shown to the user by default.
+    pub is_hidden: bool,
+    /// This parameter is the plugin's bypass control.
+    pub is_bypass: bool,
+    pub is_automatable: bool,
+    pub is_modulatable: bool,
+}
+
 /// Audio configuration negotiated with a plugin when it is activated. The host
 /// commits to never handing the plugin a block larger than `max_block_frames`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -68,6 +93,23 @@ pub trait PluginInstance {
 
     /// Deactivate, after the processor has been stopped and dropped. Idempotent.
     fn deactivate(&mut self);
+
+    /// Enumerate the plugin's parameters. Empty if it exposes no parameters.
+    fn params(&mut self) -> Vec<ParamInfo> {
+        Vec::new()
+    }
+
+    /// The current plain value of parameter `id`, if available.
+    fn param_value(&mut self, id: u32) -> Option<f64> {
+        let _ = id;
+        None
+    }
+
+    /// Render `value` of parameter `id` as display text (e.g. "-6.0 dB").
+    fn param_value_to_text(&mut self, id: u32, value: f64) -> Option<String> {
+        let _ = (id, value);
+        None
+    }
 
     /// The plugin's native editor, or `None` if it exposes no GUI.
     fn editor(&mut self) -> Option<&mut dyn Editor> {

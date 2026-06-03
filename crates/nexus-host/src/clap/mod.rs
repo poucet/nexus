@@ -7,6 +7,7 @@
 
 pub mod host;
 pub mod instance;
+pub mod params;
 pub mod ports;
 pub mod probe;
 pub mod process;
