@@ -15,8 +15,9 @@ use crossbeam_channel::{Receiver, unbounded};
 use crate::clap::host::{
     MainThreadMessage, NexusHost, NexusHostMainThread, NexusHostShared, host_info,
 };
+use crate::clap::ports::IoLayout;
+use crate::clap::process::ClapAudioProcessor;
 use crate::host::{AudioConfig, AudioProcessor, HostError, PluginInstance as HostPluginInstance};
-use crate::process::ProcessBlock;
 
 /// A loaded CLAP plugin (main-thread side).
 pub struct ClapPluginInstance {
@@ -60,6 +61,11 @@ impl ClapPluginInstance {
 
 impl HostPluginInstance for ClapPluginInstance {
     fn activate(&mut self, config: AudioConfig) -> Result<Box<dyn AudioProcessor>, HostError> {
+        let io = {
+            let mut handle = self.instance.plugin_handle();
+            IoLayout::query(&mut handle)
+        };
+
         let clap_config = PluginAudioConfiguration {
             sample_rate: config.sample_rate,
             min_frames_count: 1,
@@ -71,38 +77,17 @@ impl HostPluginInstance for ClapPluginInstance {
             .activate(|_, _| (), clap_config)
             .map_err(|e| HostError::Load(format!("activate failed: {e}")))?;
 
-        Ok(Box::new(ClapAudioProcessor {
-            processor: stopped.into(),
-        }))
+        Ok(Box::new(ClapAudioProcessor::new(
+            stopped.into(),
+            io,
+            config.max_block_frames,
+        )))
     }
 
     fn deactivate(&mut self) {
         // clack tears the plugin down when the instance is dropped; the engine
         // drops the (stopped) audio processor before this. Explicit
         // processor-returning deactivation can be revisited if needed.
-    }
-}
-
-/// A CLAP plugin's audio-thread half. `Send`, so the engine can move it onto the
-/// realtime callback.
-pub struct ClapAudioProcessor {
-    processor: PluginAudioProcessor<NexusHost>,
-}
-
-impl AudioProcessor for ClapAudioProcessor {
-    fn start_processing(&mut self) -> Result<(), HostError> {
-        self.processor
-            .start_processing()
-            .map(|_| ())
-            .map_err(|e| HostError::Load(format!("start_processing failed: {e}")))
-    }
-
-    fn stop_processing(&mut self) {
-        let _ = self.processor.stop_processing();
-    }
-
-    fn process(&mut self, _block: &mut ProcessBlock<'_>) {
-        // Audio/event buffer mapping to clack's process() lands in T9.
     }
 }
 
