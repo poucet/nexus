@@ -6,13 +6,18 @@ use nexus_host::host::PluginDescriptor;
 use nexus_host::ui::WrapperUi;
 use nexus_host::{AudioConfig, Host, PluginCatalog, PluginInstance, PluginRef, Preset};
 
-use crate::engine::Engine;
+use crate::engine::{self, Engine};
+use crate::keyboard::{KeyEvent, VirtualKeyboard};
 
 pub struct NexusApp {
     host: Host,
     catalog: PluginCatalog,
     wrapper: WrapperUi,
+    keyboard: VirtualKeyboard,
     engine: Option<Engine>,
+    /// Available audio output devices, and the selected one.
+    devices: Vec<String>,
+    selected_device: Option<String>,
     /// The currently-loaded plugin (main-thread side), kept for params/state.
     instance: Option<Box<dyn PluginInstance>>,
     /// Which catalog entry is loaded (for presets).
@@ -36,14 +41,44 @@ impl NexusApp {
             Err(e) => (None, format!("Audio engine failed: {e}")),
         };
 
+        let selected_device = engine.as_ref().map(|e| e.output_device_name().to_string());
         Self {
             host: Host::new(),
             catalog,
             wrapper: WrapperUi::new(),
+            keyboard: VirtualKeyboard::new(),
             engine,
+            devices: engine::output_devices(),
+            selected_device,
             instance: None,
             loaded: None,
             status,
+        }
+    }
+
+    /// Switch the audio output device, preserving the loaded plugin (and its
+    /// state) across the engine rebuild via a preset round-trip.
+    fn set_output_device(&mut self, name: String) {
+        let preserved = match (self.loaded.clone(), self.instance.as_mut()) {
+            (Some(plugin), Some(instance)) => Preset::capture(&plugin, instance.as_mut()).ok(),
+            _ => None,
+        };
+        self.instance = None;
+        self.engine = None; // drop the old stream first
+
+        match Engine::start_with(Some(&name)) {
+            Ok(engine) => {
+                self.engine = Some(engine);
+                self.selected_device = Some(name.clone());
+                self.status = format!("Output device: {name}");
+                if let Some(preset) = preserved {
+                    match preset.recall(&self.host) {
+                        Ok(instance) => self.play(instance, preset.plugin_id.clone()),
+                        Err(e) => self.status = format!("device changed; reload failed: {e}"),
+                    }
+                }
+            }
+            Err(e) => self.status = format!("device change failed: {e}"),
         }
     }
 
@@ -148,30 +183,64 @@ impl eframe::App for NexusApp {
             });
         });
 
+        let mut device_change: Option<String> = None;
         egui::TopBottomPanel::bottom("nexus-devices").show(ctx, |ui| {
-            ui.horizontal(|ui| match &self.engine {
-                Some(engine) => {
-                    ui.label(format!(
-                        "Output: {} @ {} Hz, {} ch",
-                        engine.output_device_name(),
-                        engine.sample_rate() as u32,
-                        engine.channels(),
-                    ));
-                    ui.separator();
-                    ui.label(format!("MIDI in: {}", engine.midi_source_name().unwrap_or("none")));
+            ui.horizontal(|ui| {
+                match &self.engine {
+                    Some(engine) => {
+                        ui.label(format!(
+                            "{} Hz, {} ch",
+                            engine.sample_rate() as u32,
+                            engine.channels(),
+                        ));
+                        ui.separator();
+                        ui.label(format!(
+                            "MIDI in: {}",
+                            engine.midi_source_name().unwrap_or("none")
+                        ));
+                    }
+                    None => {
+                        ui.colored_label(egui::Color32::RED, "No audio engine");
+                    }
                 }
-                None => {
-                    ui.colored_label(egui::Color32::RED, "No audio engine");
-                }
+                ui.separator();
+                ui.label("Output:");
+                let current = self.selected_device.clone().unwrap_or_else(|| "default".into());
+                egui::ComboBox::from_id_salt("nexus-output-device")
+                    .selected_text(current)
+                    .show_ui(ui, |ui| {
+                        for name in &self.devices {
+                            let selected = self.selected_device.as_deref() == Some(name);
+                            if ui.selectable_label(selected, name).clicked() && !selected {
+                                device_change = Some(name.clone());
+                            }
+                        }
+                    });
             });
         });
+
+        let key_events = egui::TopBottomPanel::bottom("nexus-keyboard")
+            .show(ctx, |ui| self.keyboard.show(ui))
+            .inner;
 
         let actions = egui::CentralPanel::default()
             .show(ctx, |ui| self.wrapper.show(ui, &self.catalog))
             .inner;
 
-        // `actions.editor_rect` is reserved for the native editor child window
-        // (T20–T22). Acting on the user's requests:
+        // Act on this frame's requests (after all panels, to avoid overlapping
+        // borrows of `self`). `actions.editor_rect` is reserved for the native
+        // editor child window (T20–T22).
+        if let Some(name) = device_change {
+            self.set_output_device(name);
+        }
+        for event in key_events {
+            if let Some(engine) = self.engine.as_mut() {
+                match event {
+                    KeyEvent::On(note) => engine.send_midi([0x90, note, 100]),
+                    KeyEvent::Off(note) => engine.send_midi([0x80, note, 0]),
+                }
+            }
+        }
         if let Some(plugin) = actions.load {
             self.load_plugin(&plugin);
         }
@@ -181,5 +250,8 @@ impl eframe::App for NexusApp {
         if actions.load_preset {
             self.load_preset();
         }
+
+        // Keep repainting so held computer keys / on-screen keys track releases.
+        ctx.request_repaint();
     }
 }

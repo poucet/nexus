@@ -23,13 +23,23 @@ pub struct OutputInfo {
 /// the caller plays it. New plugins are delivered to the audio thread by
 /// sending an `AudioProcessor` on `proc_rx`.
 pub fn build_output_stream(
+    device_name: Option<&str>,
     proc_rx: Receiver<Box<dyn AudioProcessor>>,
     mut midi: MidiConsumer,
+    mut ui_midi: MidiConsumer,
 ) -> anyhow::Result<(cpal::Stream, OutputInfo)> {
     let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .context("no default audio output device")?;
+    let device = match device_name {
+        Some(name) => host
+            .output_devices()
+            .ok()
+            .and_then(|mut devices| devices.find(|d| d.name().map(|n| n == name).unwrap_or(false)))
+            .or_else(|| host.default_output_device())
+            .context("requested output device not found and no default")?,
+        None => host
+            .default_output_device()
+            .context("no default audio output device")?,
+    };
     let device_name = device.name().unwrap_or_else(|_| "output".to_string());
 
     let supported = device
@@ -68,9 +78,15 @@ pub fn build_output_stream(
 
                 let frames = (data.len() / channels).min(MAX_BLOCK);
 
-                // Collect MIDI received since the last callback.
+                // Collect MIDI received since the last callback — from the
+                // hardware device and from the in-app virtual keyboard.
                 events.clear();
                 while let Ok(msg) = midi.pop() {
+                    if let Some(event) = parse_midi(msg) {
+                        events.push(0, event);
+                    }
+                }
+                while let Ok(msg) = ui_midi.pop() {
                     if let Some(event) = parse_midi(msg) {
                         events.push(0, event);
                     }

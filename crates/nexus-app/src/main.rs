@@ -3,6 +3,7 @@
 
 mod app;
 mod engine;
+mod keyboard;
 
 use app::NexusApp;
 

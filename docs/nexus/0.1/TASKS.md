@@ -97,7 +97,8 @@ lets you pick audio/MIDI devices.
 | ✅ | T17 | Create `crates/nexus-app` (`eframe`/`egui`), app state, main window; pull in `cpal`/`midir` (Feature 5 lives here); add to workspace members | `crates/nexus-app/src/main.rs` + `app.rs` — eframe window (900×600), `NexusApp` holding host/catalog/engine/wrapper. |
 | ✅ | T18 | Embed `nexus-host`'s wrapper UI (selector + presets + editor frame, T33) in the app window; the app supplies the window handle + the catalog | `app.rs` — `WrapperUi::show()` in the central panel; top/bottom panels show status + device info. |
 | ✅ | T19 | Wire app → `nexus-host`: load selected plugin, start the engine, show status (loaded / playing) | `app.rs` — load → `host.load` → `activate` → `engine.set_processor`; preset save/recall wired via `rfd` file dialogs (consumes T32). |
-| ⬜ | T31 | **Device-selection UI**: dropdowns for audio output device (and input), sample rate/buffer size, and MIDI input source; apply selection to the engine (restart stream on change) | new `crates/nexus-app/src/devices.rs`. Enumerate via `cpal`/`midir`; persist last choice via the config file (T25). |
+| ✅ | T31 | **Device-selection UI**: dropdown for audio output device; apply selection to the engine (rebuild stream on change, preserving the loaded plugin via a preset round-trip) | `engine::output_devices()` + `Engine::start_with(name)`; app combo in the bottom bar; `set_output_device` captures a preset, rebuilds the engine, recalls. (Input device / sample-rate / MIDI-source pickers + persistence deferred.) Compile-verified; runtime at T23. |
+| ✅ | T34 | **Virtual MIDI keyboard** in `nexus-app`: computer-key row (A W S E D F T G Y H U J K) + clickable on-screen keys → note on/off into the engine, no hardware needed; octave shift | `crates/nexus-app/src/keyboard.rs` (`VirtualKeyboard`) + a UI→audio `rtrb` channel (`Engine::send_midi`) drained alongside hardware MIDI. Compile-verified; runtime at T23. |
 
 ## Feature 7: Plugin editor embedding
 
