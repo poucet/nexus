@@ -6,8 +6,6 @@
 //! [`Host::load`] and drive it through [`PluginInstance`], never branching on
 //! VST3 vs. CLAP.
 
-use std::path::Path;
-
 use crate::process::ProcessBlock;
 
 /// The plugin format a binary implements.
@@ -119,19 +117,20 @@ impl Host {
         Self::default()
     }
 
-    /// Load the plugin bundle at `path` of the given `format` into a runnable
-    /// [`PluginInstance`], dispatching to the format-specific backend.
-    ///
-    /// The CLAP and VST3 backends are not wired in yet, so this currently
-    /// returns [`HostError::NotImplemented`]; this signature is the seam they
-    /// plug into.
+    /// Load `plugin` into a runnable [`PluginInstance`], dispatching to the
+    /// format-specific backend. (VST3 is deferred until the CLAP slice is done.)
     pub fn load(
         &self,
-        format: PluginFormat,
-        _path: &Path,
+        plugin: &crate::PluginRef,
     ) -> Result<Box<dyn PluginInstance>, HostError> {
-        match format {
-            PluginFormat::Clap => Err(HostError::NotImplemented(PluginFormat::Clap)),
+        match plugin.format {
+            PluginFormat::Clap => {
+                let instance = crate::clap::instance::ClapPluginInstance::load(
+                    &plugin.path,
+                    &plugin.descriptor.id,
+                )?;
+                Ok(Box::new(instance))
+            }
             PluginFormat::Vst3 => Err(HostError::NotImplemented(PluginFormat::Vst3)),
         }
     }
@@ -140,6 +139,21 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PluginRef;
+    use std::path::PathBuf;
+
+    fn fake_plugin(format: PluginFormat, path: &str) -> PluginRef {
+        PluginRef {
+            format,
+            path: PathBuf::from(path),
+            descriptor: PluginDescriptor {
+                id: "com.example.test".into(),
+                name: None,
+                vendor: None,
+                version: None,
+            },
+        }
+    }
 
     #[test]
     fn host_can_be_constructed() {
@@ -147,11 +161,19 @@ mod tests {
     }
 
     #[test]
-    fn load_reports_not_implemented_for_now() {
+    fn loading_vst3_is_not_implemented_yet() {
         let host = Host::new();
-        for format in [PluginFormat::Clap, PluginFormat::Vst3] {
-            let result = host.load(format, Path::new("/tmp/whatever"));
-            assert!(matches!(result, Err(HostError::NotImplemented(f)) if f == format));
-        }
+        let plugin = fake_plugin(PluginFormat::Vst3, "/tmp/x.vst3");
+        assert!(matches!(
+            host.load(&plugin),
+            Err(HostError::NotImplemented(PluginFormat::Vst3))
+        ));
+    }
+
+    #[test]
+    fn loading_a_missing_clap_bundle_errors() {
+        let host = Host::new();
+        let plugin = fake_plugin(PluginFormat::Clap, "/no/such/nexus.clap");
+        assert!(matches!(host.load(&plugin), Err(HostError::Load(_))));
     }
 }
