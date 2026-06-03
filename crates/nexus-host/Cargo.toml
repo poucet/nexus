@@ -18,3 +18,10 @@ base64.workspace = true
 clack-host.workspace = true
 clack-extensions.workspace = true
 crossbeam-channel.workspace = true
+egui = { workspace = true, optional = true }
+
+[features]
+# Optional egui "wrapper UI" (plugin selector, presets, editor frame), reused by
+# nexus-app and nexus-wrap. Off by default so the bare library — and a future
+# web DAW — pull in no egui.
+ui = ["dep:egui"]

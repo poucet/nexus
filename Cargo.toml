@@ -24,6 +24,10 @@ clack-host = { git = "https://github.com/prokopyl/clack.git" }
 clack-extensions = { git = "https://github.com/prokopyl/clack.git", features = ["clack-host", "all-extensions"] }
 crossbeam-channel = "0.5"
 
+# egui for the optional wrapper UI (`ui` feature). The app brings `eframe`.
+# Pinned to 0.31 — newer egui (0.34) requires rustc 1.92; we target 1.90.
+egui = "0.31"
+
 # Used by the xtask build helper.
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

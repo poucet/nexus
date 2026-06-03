@@ -14,6 +14,8 @@ pub mod discovery;
 pub mod host;
 pub mod preset;
 pub mod process;
+#[cfg(feature = "ui")]
+pub mod ui;
 
 pub use discovery::catalog::{PluginCatalog, PluginRef};
 pub use preset::Preset;
