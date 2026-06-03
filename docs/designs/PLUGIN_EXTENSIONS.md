@@ -116,3 +116,29 @@ bus arrangements for audio, `IMidiMapping`/event lists for MIDI, `IPlugView` for
 GUI). Phase 01 VST3 covers load/process/state/GUI; the long tail of VST3-host
 parity is Phase 02. `nexus-wrap` does **not** touch VST3 directly — `clap-wrapper`
 provides the VST3 face of our CLAP implementation.
+
+## Known VST3 → CLAP limitations
+
+The façade is **CLAP-faithful** (CLAP is a near-superset of VST3 on the
+functional surface), so a few VST3-only concepts flatten when a VST3 is
+expressed through it. None affect a plugin's audible function — its full
+internal state round-trips via the opaque state chunk; only host-facing
+*enumeration/organization* is reduced:
+
+- **Program lists / units** (`IUnitInfo`, `IProgramListData`) — hierarchical
+  unit trees and factory program enumeration have no direct CLAP equivalent
+  (CLAP uses flat param modules + file-based presets). *Biggest mismatch.*
+- **Custom note-expression types** — VST3 permits arbitrary note-expression
+  typeIDs; CLAP has a fixed set (volume/pan/tuning/vibrato/expression/
+  brightness/pressure).
+- **Some param flags** — `kIsProgramChange`, `kIsList` (discrete string-list
+  params) lack exact CLAP equivalents.
+- **`IMidiMapping`** (CC→param hints) and a few **bus/speaker arrangement**
+  negotiation edge cases.
+
+For the **wrap** path (VST3-in-CLAP via `nexus-wrap`) this loss is *inherent* —
+the output format is CLAP, and `clap-wrapper` hits the mirror image going the
+other way. For the **direct-host** path (the egui app hosting a VST3), we may
+add an *optional, VST3-only* façade extension (e.g. program lists) when VST3
+hosting lands (Phase 02); it would sit alongside the CLAP-faithful core, not
+replace it. Decision deferred to VST3-hosting time.

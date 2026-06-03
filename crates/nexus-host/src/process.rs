@@ -80,23 +80,121 @@ impl AudioBuffer {
     }
 }
 
-/// A single note/MIDI event, timed by its sample offset within the block.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// A single event, timed by its sample offset within the block.
+#[derive(Debug, Clone, PartialEq)]
 pub struct TimedEvent {
     /// Sample offset from the start of the current block.
     pub time: u32,
     pub event: Event,
 }
 
-/// A format-agnostic input event. Note on/off are first-class because every
-/// format and the engine speak them directly; [`Event::Midi`] carries any other
-/// MIDI 1.0 message as raw bytes (CC, pitch bend, etc.).
+/// Which kind of note event this is (mirrors CLAP's note event types).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteEventKind {
+    On,
+    Off,
+    /// Terminate the voice immediately, without a release stage.
+    Choke,
+    /// A voice has ended (plugin → host direction).
+    End,
+}
+
+/// Per-note expression dimension (mirrors CLAP's note expressions).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteExpression {
+    Volume,
+    Pan,
+    Tuning,
+    Vibrato,
+    Expression,
+    Brightness,
+    Pressure,
+}
+
+/// Transport / playhead state for the block (the audible subset of CLAP's
+/// `clap_event_transport`).
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Transport {
+    pub playing: bool,
+    pub loop_active: bool,
+    pub tempo_bpm: f64,
+    /// Song position, in beats.
+    pub song_pos_beats: f64,
+    /// Song position, in seconds.
+    pub song_pos_seconds: f64,
+    pub time_sig_numerator: u16,
+    pub time_sig_denominator: u16,
+}
+
+/// A format-agnostic plugin event, modelled faithfully on CLAP's event union so
+/// that hosting — and **wrapping CLAP-in-CLAP** — is lossless. VST3 maps onto
+/// this same set. (CLAP's `cookie` optimization hint and a few rarely-used
+/// transport fields are intentionally dropped; everything affecting audible
+/// behaviour is preserved.)
+#[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    NoteOn { channel: u8, key: u8, velocity: f64 },
-    NoteOff { channel: u8, key: u8, velocity: f64 },
-    /// Raw MIDI 1.0 message: status byte followed by up to two data bytes.
-    Midi([u8; 3]),
+    /// Note on / off / choke / end (`clap_event_note`).
+    Note {
+        kind: NoteEventKind,
+        /// Host-assigned note id, or `-1` if unused.
+        note_id: i32,
+        port_index: i16,
+        channel: i16,
+        key: i16,
+        velocity: f64,
+    },
+    /// Per-note expression (`clap_event_note_expression`).
+    NoteExpression {
+        expression: NoteExpression,
+        note_id: i32,
+        port_index: i16,
+        channel: i16,
+        key: i16,
+        value: f64,
+    },
+    /// Parameter value change (`clap_event_param_value`).
+    ParamValue {
+        param_id: u32,
+        note_id: i32,
+        port_index: i16,
+        channel: i16,
+        key: i16,
+        value: f64,
+    },
+    /// Parameter modulation (`clap_event_param_mod`).
+    ParamMod {
+        param_id: u32,
+        note_id: i32,
+        port_index: i16,
+        channel: i16,
+        key: i16,
+        amount: f64,
+    },
+    /// Begin a parameter edit gesture (`clap_event_param_gesture`).
+    ParamGestureBegin { param_id: u32 },
+    /// End a parameter edit gesture.
+    ParamGestureEnd { param_id: u32 },
+    /// Transport / playhead update (`clap_event_transport`).
+    Transport(Transport),
+    /// Raw MIDI 1.0 message (`clap_event_midi`): status + up to two data bytes.
+    Midi { port_index: u16, data: [u8; 3] },
+    /// MIDI 2.0 / UMP packet (`clap_event_midi2`).
+    Midi2 { port_index: u16, data: [u32; 4] },
+    /// MIDI System Exclusive (`clap_event_midi_sysex`). The only variant that
+    /// owns a heap buffer — sysex is rare on the audio path.
+    Sysex { port_index: u16, data: Vec<u8> },
+}
+
+impl Event {
+    /// A simple channel note-on (no note id, port 0).
+    pub fn note_on(channel: i16, key: i16, velocity: f64) -> Self {
+        Event::Note { kind: NoteEventKind::On, note_id: -1, port_index: 0, channel, key, velocity }
+    }
+
+    /// A simple channel note-off (no note id, port 0).
+    pub fn note_off(channel: i16, key: i16, velocity: f64) -> Self {
+        Event::Note { kind: NoteEventKind::Off, note_id: -1, port_index: 0, channel, key, velocity }
+    }
 }
 
 /// An ordered list of events for one block. Reused across blocks via
@@ -194,15 +292,15 @@ mod tests {
     #[test]
     fn event_buffer_preserves_push_order_and_clears() {
         let mut events = EventBuffer::with_capacity(8);
-        events.push(0, Event::NoteOn { channel: 0, key: 60, velocity: 1.0 });
-        events.push(128, Event::Midi([0xB0, 7, 100]));
-        events.push(256, Event::NoteOff { channel: 0, key: 60, velocity: 0.0 });
+        events.push(0, Event::note_on(0, 60, 1.0));
+        events.push(128, Event::Midi { port_index: 0, data: [0xB0, 7, 100] });
+        events.push(256, Event::note_off(0, 60, 0.0));
 
-        let collected: Vec<_> = events.iter().copied().collect();
+        let collected: Vec<_> = events.iter().cloned().collect();
         assert_eq!(collected.len(), 3);
         assert_eq!(collected[0].time, 0);
-        assert_eq!(collected[0].event, Event::NoteOn { channel: 0, key: 60, velocity: 1.0 });
-        assert_eq!(collected[1].event, Event::Midi([0xB0, 7, 100]));
+        assert_eq!(collected[0].event, Event::note_on(0, 60, 1.0));
+        assert_eq!(collected[1].event, Event::Midi { port_index: 0, data: [0xB0, 7, 100] });
 
         events.clear();
         assert!(events.is_empty());
