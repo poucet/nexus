@@ -14,7 +14,7 @@ progress / ✅ done.
 | T3  | ⬜ | P0 | 1 Discovery | M |
 | T25 | ✅ | P1 | 1 Discovery | S |
 | T4  | ⬜ | P0 | 2 Host core | M |
-| T5  | 🔄 | P0 | 2 Host core | S |
+| T5  | ✅ | P0 | 2 Host core | S |
 | T6  | ⬜ | P0 | 3 CLAP | M |
 | T7  | ⬜ | P0 | 3 CLAP | S |
 | T8  | ⬜ | P0 | 3 CLAP | M |
@@ -46,7 +46,7 @@ plugins with enough metadata (name, vendor, format, path) to display and load.
 |------|---|------|---------------|
 | ✅ | T1 | Define macOS plugin search paths for CLAP + VST3 (user `~/Library/Audio/Plug-Ins/{CLAP,VST3}` and system `/Library/Audio/Plug-Ins/{CLAP,VST3}`) | `crates/nexus-host/src/discovery/paths.rs` — `search_paths(format)` + pure `search_paths_in(home, format)`; user scope before system. 3 unit tests. |
 | ✅ | T2 | Filesystem scan → `Vec<(PluginFormat, bundle_path)>`; CLAP = `*.clap` bundles, VST3 = `*.vst3` bundles | `crates/nexus-host/src/discovery/scan.rs` — `scan(format)` + `scan_all()`; recurses vendor folders (depth-capped) but never descends into a matched bundle; missing dirs non-fatal. Used `std::fs` recursion, not `walkdir`. 5 tests. |
-| ✅ | T25 | Config file with custom CLAP/VST3 plugin locations that **extend** the default search paths | `crates/nexus-host/src/discovery/config.rs` — TOML at `~/Library/Application Support/Nexus/config.toml` (override via `NEXUS_CONFIG`); `[plugins] clap=[...] vst3=[...]`; `~` expansion; missing/invalid non-fatal. `paths::search_paths` merges defaults + config, deduped; `scan` picks them up automatically. 6 tests. |
+| ✅ | T2.5 | Config file with custom CLAP/VST3 plugin locations that **extend** the default search paths | `crates/nexus-host/src/discovery/config.rs` — TOML at `~/Library/Application Support/Nexus/config.toml` (override via `NEXUS_CONFIG`); `[plugins] clap=[...] vst3=[...]`; `~` expansion; missing/invalid non-fatal. `paths::search_paths` merges defaults + config, deduped; `scan` picks them up automatically. 6 tests. |
 | ⬜ | T3 | `PluginCatalog` + `PluginRef { format, path, descriptor{ id, name, vendor } }`; assemble by probing each bundle's factory (delegates to CLAP probe T7 / VST3 probe T11) | new `crates/nexus-host/src/discovery/catalog.rs`; re-export from `lib.rs`. Probe failures are logged + skipped, never fatal (folders contain junk). |
 
 ## Feature 2: Format-agnostic host core
@@ -57,7 +57,7 @@ The seam every format and the UI sit behind. Extend the existing `Host`/
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
 | ⬜ | T4 | `PluginInstance` trait (activate, start/stop processing, process, editor handle) + `PluginRef::load() -> Box<dyn PluginInstance>` dispatching on format | new `crates/nexus-host/src/host.rs`; move `Host`/`HostError`/`PluginFormat` out of `lib.rs` into it. |
-| 🔄 | T5 | Shared audio/event buffer types: interleaved/planar audio buffers, note/MIDI event list passed to `process` | new `crates/nexus-host/src/process.rs`. Keep allocation-free on the audio path. |
+| ✅ | T5 | Shared audio/event buffer types: interleaved/planar audio buffers, note/MIDI event list passed to `process` | `crates/nexus-host/src/process.rs` — `AudioBuffer` (planar, reuse via `clear`/`set_frames`), `Event` (NoteOn/Off + raw `Midi`), `EventBuffer`, `ProcessBlock`. Alloc-free per block. 5 tests. |
 
 ## Feature 3: CLAP hosting (via `clack`)
 

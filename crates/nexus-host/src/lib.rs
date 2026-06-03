@@ -10,6 +10,7 @@
 //! a single interface so that callers never need to branch on VST3 vs. CLAP.
 
 pub mod discovery;
+pub mod process;
 
 /// The plugin format a binary implements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
