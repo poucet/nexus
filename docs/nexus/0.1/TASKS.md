@@ -19,7 +19,7 @@ plugins with enough metadata (name, vendor, format, path) to display and load.
 | ✅ | T1 | Define macOS plugin search paths for CLAP + VST3 (user `~/Library/Audio/Plug-Ins/{CLAP,VST3}` and system `/Library/Audio/Plug-Ins/{CLAP,VST3}`) | `crates/nexus-host/src/discovery/paths.rs` — `search_paths(format)` + pure `search_paths_in(home, format)`; user scope before system. 3 unit tests. |
 | ✅ | T2 | Filesystem scan → `Vec<(PluginFormat, bundle_path)>`; CLAP = `*.clap` bundles, VST3 = `*.vst3` bundles | `crates/nexus-host/src/discovery/scan.rs` — `scan(format)` + `scan_all()`; recurses vendor folders (depth-capped) but never descends into a matched bundle; missing dirs non-fatal. Used `std::fs` recursion, not `walkdir`. 5 tests. |
 | ✅ | T2.5 | Config file with custom CLAP/VST3 plugin locations that **extend** the default search paths | `crates/nexus-host/src/discovery/config.rs` — TOML at `~/Library/Application Support/Nexus/config.toml` (override via `NEXUS_CONFIG`); `[plugins] clap=[...] vst3=[...]`; `~` expansion; missing/invalid non-fatal. `paths::search_paths` merges defaults + config, deduped; `scan` picks them up automatically. 6 tests. |
-| ⬜ | T3 | `PluginCatalog` + `PluginRef { format, path, descriptor{ id, name, vendor } }`; assemble by probing each bundle's factory (delegates to CLAP probe T7 / VST3 probe T11) | new `crates/nexus-host/src/discovery/catalog.rs`; re-export from `lib.rs`. Probe failures are logged + skipped, never fatal (folders contain junk). |
+| ✅ | T3 | `PluginCatalog` + `PluginRef { format, path, descriptor{ id, name, vendor } }`; assemble by probing each bundle's factory (delegates to CLAP probe T7 / VST3 probe T11) | `crates/nexus-host/src/discovery/catalog.rs` (re-exported from `lib.rs`) — `PluginCatalog::scan()` over `scan_all` + per-format probe; `display_name()` falls back to id; failures logged + skipped. Verified: assembles 24 CLAP plugins (VST3 skipped until T11). |
 
 ## Feature 2: Format-agnostic host core
 
@@ -55,6 +55,12 @@ format-agnostic capability to `PluginInstance` (T4) that the egui app and, later
 > (ROADMAP #12); they're stubbed here so plugins still load.
 
 ## Feature 4: VST3 hosting (via Rust SDK bindings)
+
+> **Sequencing (per direction 2026-06-03): all CLAP before VST3.** Do not start
+> Feature 4 (or the VST3 editor T22 / VST3 state T30) until the full CLAP
+> vertical slice works end to end: CLAP host parity (T6–T9, T26–T29) → engine
+> (T14–T16) → app shell (T17–T19) → CLAP editor embedding (T20–T21) → CLAP
+> integration (T23). VST3 then brings the second format up to the same surface.
 
 Riskiest piece. COM-style lifetimes; reuses the F2 abstraction and F5 engine.
 Phase 01 brings VST3 to **load / process / params / state / GUI**, mapping onto
