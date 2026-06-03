@@ -25,8 +25,8 @@ sequenced first because it unblocks the engine and UI plumbing that VST3 reuses.
 |------|-----|---|---------|------------|--------|
 | [ ] | P0 | 1 | Plugin discovery & catalog (scan macOS CLAP/VST3 dirs → descriptors) | M | High — nothing loads without a list of what's installed |
 | [ ] | P0 | 2 | Format-agnostic host core (traits, audio/event buffer types) | M | High — the seam every format and UI sits behind |
-| [ ] | P0 | 3 | CLAP hosting via `clack` (probe, instantiate, process) | M | High — fastest path to a plugin that actually loads |
-| [ ] | P0 | 4 | VST3 hosting via Rust SDK bindings (module, instantiate, process) | L | High — second format; the riskiest piece of the MVP |
+| [ ] | P0 | 3 | CLAP hosting via `clack` — **full host-side extension parity** (audio/note I/O, params, state, latency/tail/voice-info, GUI, host infra) | L | High — fastest path to a plugin that loads, and the reference surface for every aspect ([PLUGIN_EXTENSIONS.md](../../designs/PLUGIN_EXTENSIONS.md)) |
+| [ ] | P0 | 4 | VST3 hosting via Rust SDK bindings (module, instantiate, process, state, GUI) | L | High — second format; the riskiest piece. Full VST3-host parity is Phase 02 |
 | [ ] | P0 | 5 | Audio + MIDI engine (CPAL out, midir in, realtime callback) | M | High — turns "loaded" into "audible" |
 | [ ] | P0 | 6 | egui host app shell `nexus-app` (window, plugin browser, load) | M | High — the visible deliverable |
 | [ ] | P0 | 7 | Plugin editor embedding (native child window; CLAP + VST3 views) | L | High — "show the actual plugin" — the other risky piece |
@@ -38,9 +38,10 @@ sequenced first because it unblocks the engine and UI plumbing that VST3 reuses.
 | Done | Pri | # | Feature | Complexity | Impact |
 |------|-----|---|---------|------------|--------|
 | [ ] | P2 | 10 | Cross-platform discovery (Windows + Linux search paths) | M | Medium — MVP is macOS-only by choice |
-| [ ] | P2 | 11 | Parameter list + host-side automation/state save-load | L | Medium — toward a real host, and reused by the wrapper |
-| [ ] | P2 | 12 | `nexus-wrap`: expose the host as a CLAP/VST3 plugin (wrap a plugin) | XL | High — layer 2 of the project |
-| [ ] | P3 | 13 | DAW UI spike (web frontend over the engine; editors as floating windows) | L | High — informs the eventual `nexus-daw` UI choice |
+| [ ] | P2 | 11 | Full **VST3-host** extension parity (params, latency, units, note-expression, …) | L | Medium — bring VST3 hosting up to the CLAP surface |
+| [ ] | P2 | 12 | CLAP host long-tail extensions (surround/ambisonic, posix-fd, thread-pool, event-registry, param-indication, remote-controls, preset-load, context-menu) | M | Low–Medium — niche; stubbed in Phase 01, completed here |
+| [ ] | P1 | 13 | `nexus-wrap`: expose the host as a CLAP/VST3 plugin, **forwarding the full extension surface** to the inner plugin (VST3 via `clap-wrapper`) | XL | High — layer 2; consumes the same `PluginInstance` surface ([PLUGIN_EXTENSIONS.md](../../designs/PLUGIN_EXTENSIONS.md)) |
+| [ ] | P3 | 14 | DAW UI spike (web frontend over the engine; editors as floating windows) | L | High — informs the eventual `nexus-daw` UI choice |
 
 ---
 

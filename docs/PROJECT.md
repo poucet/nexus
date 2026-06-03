@@ -27,6 +27,11 @@ out + MIDI in), and **see its editor** embedded as a native child window.
 - Plugin stack mirrors the sibling `droplets` project: `clack` for CLAP (host
   side here), `clap-wrapper` for VST3 *export* later. VST3 *hosting* in the MVP
   uses Rust VST3 SDK bindings.
+- **Full plugin-aspect parity** is a committed goal: `nexus-host` drives, and
+  `nexus-wrap` forwards, *every* plugin extension (audio/MIDI I/O, params,
+  state, GUI, latency/tail/voice-info, …) through one `PluginInstance` surface.
+  Phase 01 implements full CLAP host-side parity. See
+  [designs/PLUGIN_EXTENSIONS.md](designs/PLUGIN_EXTENSIONS.md).
 
 **Notes:**
 - Uses `jj` (Jujutsu), colocated with git. Commits: `jj describe` / `jj commit`.

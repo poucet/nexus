@@ -31,27 +31,43 @@ The seam every format and the UI sit behind. Extend the existing `Host`/
 | ✅ | T4 | `PluginInstance` trait (activate, start/stop processing, process, editor handle) + `Host::load(format, path) -> Box<dyn PluginInstance>` dispatching on format | `crates/nexus-host/src/host.rs` — moved `PluginFormat`/`HostError`/`Host` here (re-exported from `lib.rs`); added `PluginInstance` + `Editor` traits, `AudioConfig`, and `Host::load` dispatch (backends return `NotImplemented` until T8/T12). Used `Host::load` not `PluginRef::load` (PluginRef is T3). 2 tests. |
 | ✅ | T5 | Shared audio/event buffer types: interleaved/planar audio buffers, note/MIDI event list passed to `process` | `crates/nexus-host/src/process.rs` — `AudioBuffer` (planar, reuse via `clear`/`set_frames`), `Event` (NoteOn/Off + raw `Midi`), `EventBuffer`, `ProcessBlock`. Alloc-free per block. 5 tests. |
 
-## Feature 3: CLAP hosting (via `clack`)
+## Feature 3: CLAP hosting (via `clack`) — full host-side extension parity
 
-CLAP first — it unblocks the engine (F5) and UI (F6) plumbing that VST3 reuses.
+CLAP first — it unblocks the engine (F5) and UI (F6) plumbing that VST3 reuses,
+and it is the **reference surface** for every plugin aspect. The host implements
+the host side of every standard CLAP extension; each aspect adds a
+format-agnostic capability to `PluginInstance` (T4) that the egui app and, later,
+`nexus-wrap` consume. See [PLUGIN_EXTENSIONS.md](../../designs/PLUGIN_EXTENSIONS.md).
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| ⬜ | T6 | Add `clack-host` + `clack-extensions` (workspace deps); implement a minimal host (host info, thread-check, log, audio-ports extensions) | new `crates/nexus-host/src/clap/host.rs`. Mirror `droplets`' clack git pin. |
+| ⬜ | T6 | Add `clack-host` + `clack-extensions` (workspace deps); host infrastructure extensions: `log`, `thread-check`, `timer-support` (+ stubs for `thread-pool`, `event-registry`) | new `crates/nexus-host/src/clap/host.rs`. Mirror `droplets`' clack git pin. |
 | ⬜ | T7 | CLAP factory probe: dlopen bundle, read `clap_plugin_factory` descriptors → `(id, name, vendor)` for the catalog (T3) | new `crates/nexus-host/src/clap/probe.rs`. Cheap; no instantiation. |
-| ⬜ | T8 | Instantiate + activate a CLAP plugin behind the `PluginInstance` trait (T4); negotiate sample-rate/block-size | new `crates/nexus-host/src/clap/instance.rs`. |
-| ⬜ | T9 | CLAP `process()`: map F5 audio buffers + note/MIDI events to `clap_process`; handle audio ports + note ports | new `crates/nexus-host/src/clap/process.rs`. |
+| ⬜ | T8 | Instantiate + activate behind `PluginInstance` (T4); negotiate sample-rate/block-size; `render` mode | new `crates/nexus-host/src/clap/instance.rs`. |
+| ⬜ | T9 | Audio + Note I/O: `audio-ports` + `audio-ports-config` layout, `note-ports`, transport; `process()` maps F5 buffers/events to `clap_process` | new `crates/nexus-host/src/clap/process.rs`, `clap/ports.rs`. Adds `audio_ports()`/`note_ports()` to the trait. |
+| ⬜ | T26 | Params: enumerate, get/set, value↔text, flush; handle host rescan/clear/request-flush | new `crates/nexus-host/src/clap/params.rs`. Adds param methods to `PluginInstance`. |
+| ⬜ | T27 | State: `state` save/load + `state-context` | new `crates/nexus-host/src/clap/state.rs`. Adds `save_state`/`load_state` to the trait. |
+| ⬜ | T28 | Latency, tail, voice-info, note-name reporting | new `crates/nexus-host/src/clap/info.rs`. Adds `latency()`/`tail()`/`voice_info()`/note-name. |
+| ⬜ | T29 | Standalone `track-info` provider (host → plugin) + wire the GUI extension host callbacks (resize/show/hide/closed) to the editor window (T20–T22) | `crates/nexus-host/src/clap/host.rs`, `clap/gui.rs`. |
+
+> Long-tail CLAP extensions (surround/ambisonic, posix-fd, full thread-pool,
+> param-indication, remote-controls, preset-load, context-menu) are Phase 02
+> (ROADMAP #12); they're stubbed here so plugins still load.
 
 ## Feature 4: VST3 hosting (via Rust SDK bindings)
 
 Riskiest piece. COM-style lifetimes; reuses the F2 abstraction and F5 engine.
+Phase 01 brings VST3 to **load / process / params / state / GUI**, mapping onto
+the same `PluginInstance` surface as CLAP. The long tail of VST3-host parity
+(units, note-expression, param-indication, …) is Phase 02 (ROADMAP #11).
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
 | ⬜ | T10 | Add a VST3 binding crate (`vst3`/`vst3-sys`); load a `.vst3` module, get `IPluginFactory`, implement a minimal `IHostApplication` | new `crates/nexus-host/src/vst3/module.rs`, `vst3/host.rs`. Needs the Steinberg VST3 SDK. |
 | ⬜ | T11 | VST3 factory probe: enumerate `PClassInfo` → `(id, name, vendor)` for the catalog (T3) | new `crates/nexus-host/src/vst3/probe.rs`. |
 | ⬜ | T12 | Instantiate `IComponent` + `IAudioProcessor` + `IEditController`; connect components, set bus arrangements, `setupProcessing`, activate | new `crates/nexus-host/src/vst3/instance.rs`. Behind `PluginInstance` (T4). |
-| ⬜ | T13 | VST3 `process()`: fill `ProcessData` audio buses + event input list from F5; map note/MIDI events | new `crates/nexus-host/src/vst3/process.rs`. |
+| ⬜ | T13 | VST3 `process()`: fill `ProcessData` audio buses + event input list from F5; map note/MIDI events; `IEditController` params | new `crates/nexus-host/src/vst3/process.rs`, `vst3/params.rs`. |
+| ⬜ | T30 | VST3 state: `IComponent` get/setState (+ `IEditController` state) behind the trait's `save_state`/`load_state` | new `crates/nexus-host/src/vst3/state.rs`. |
 
 ## Feature 5: Audio + MIDI engine
 
