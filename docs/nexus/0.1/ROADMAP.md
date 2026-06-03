@@ -27,8 +27,8 @@ sequenced first because it unblocks the engine and UI plumbing that VST3 reuses.
 | [ ] | P0 | 2 | Format-agnostic host core (traits, audio/event buffer types) | M | High — the seam every format and UI sits behind |
 | [ ] | P0 | 3 | CLAP hosting via `clack` — **full host-side extension parity** (audio/note I/O, params, state, latency/tail/voice-info, GUI, host infra) | L | High — fastest path to a plugin that loads, and the reference surface for every aspect ([PLUGIN_EXTENSIONS.md](../../designs/PLUGIN_EXTENSIONS.md)) |
 | [ ] | P0 | 4 | VST3 hosting via Rust SDK bindings (module, instantiate, process, state, GUI) | L | High — second format; the riskiest piece. Full VST3-host parity is Phase 02 |
-| [ ] | P0 | 5 | Audio + MIDI engine (CPAL out, midir in, realtime callback) | M | High — turns "loaded" into "audible" |
-| [ ] | P0 | 6 | egui host app shell `nexus-app` (window, plugin browser, load) | M | High — the visible deliverable |
+| [ ] | P0 | 5 | Realtime engine in **`nexus-app`** (CPAL out, midir in, callback driving the host's `AudioProcessor`) | M | High — turns "loaded" into "audible"; lives in the app, not the host library |
+| [ ] | P0 | 6 | `nexus-app` egui shell: plugin browser + load + **device-selection UI** (audio in/out devices, MIDI sources) | M | High — the visible deliverable |
 | [ ] | P0 | 7 | Plugin editor embedding (native child window; CLAP + VST3 views) | L | High — "show the actual plugin" — the other risky piece |
 | [ ] | P0 | 8 | End-to-end integration + macOS verification with real plugins | M | High — proves the whole chain on real CLAP/VST3 |
 | [ ] | P1 | 9 | Error surfacing in UI (scan/load failures don't crash the app) | S | Medium — real plugin folders contain broken/old binaries |

@@ -75,26 +75,29 @@ the same `PluginInstance` surface as CLAP. The long tail of VST3-host parity
 | ⬜ | T13 | VST3 `process()`: fill `ProcessData` audio buses + event input list from F5; map note/MIDI events; `IEditController` params | new `crates/nexus-host/src/vst3/process.rs`, `vst3/params.rs`. |
 | ⬜ | T30 | VST3 state: `IComponent` get/setState (+ `IEditController` state) behind the trait's `save_state`/`load_state` | new `crates/nexus-host/src/vst3/state.rs`. |
 
-## Feature 5: Audio + MIDI engine
+## Feature 5: Realtime engine (in `nexus-app`)
 
-Turns "loaded" into "audible." Owns the realtime callback; drives the active
-instance regardless of format.
-
-| Done | # | Task | Files / notes |
-|------|---|------|---------------|
-| ⬜ | T14 | CPAL output stream; realtime callback pulls audio from the active `PluginInstance` | new `crates/nexus-host/src/engine/audio.rs` (`cpal`). |
-| ⬜ | T15 | MIDI input via `midir` → lock-free queue (`rtrb`) → events consumed in the audio callback as note on/off | new `crates/nexus-host/src/engine/midi.rs`. |
-| ⬜ | T16 | Engine lifecycle: start/stop, swap active instance, expose sample-rate/block-size to instances | new `crates/nexus-host/src/engine/mod.rs`. |
-
-## Feature 6: egui host app shell (`nexus-app`)
-
-The visible deliverable: a window that browses the catalog and loads a plugin.
+Turns "loaded" into "audible." **Lives in `nexus-app`, not `nexus-host`** —
+`nexus-host` exposes the `AudioProcessor`; the app owns the audio/MIDI hardware
+and the realtime callback that drives it. (Created as part of T17.)
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| ⬜ | T17 | Create `crates/nexus-app` (`eframe`/`egui`), app state, main window; add to workspace members | new crate; update root `Cargo.toml` members + workspace deps. |
+| ⬜ | T14 | CPAL output stream; realtime callback pulls audio from the active `AudioProcessor` and writes the chosen output device | new `crates/nexus-app/src/engine/audio.rs` (`cpal`). |
+| ⬜ | T15 | MIDI input via `midir` → lock-free queue (`rtrb`) → `Event`s consumed in the audio callback | new `crates/nexus-app/src/engine/midi.rs`. |
+| ⬜ | T16 | Engine lifecycle: start/stop, swap active instance, negotiate sample-rate/block-size against the chosen device, hand them to `AudioProcessor` | new `crates/nexus-app/src/engine/mod.rs`. |
+
+## Feature 6: `nexus-app` egui shell
+
+The visible deliverable: a window that browses the catalog, loads a plugin, and
+lets you pick audio/MIDI devices.
+
+| Done | # | Task | Files / notes |
+|------|---|------|---------------|
+| ⬜ | T17 | Create `crates/nexus-app` (`eframe`/`egui`), app state, main window; pull in `cpal`/`midir` (Feature 5 lives here); add to workspace members | new crate; update root `Cargo.toml` members + workspace deps. |
 | ⬜ | T18 | Plugin browser panel: list catalog (name / vendor / format), text filter, "Load" action | new `crates/nexus-app/src/browser.rs`. |
 | ⬜ | T19 | Wire app → `nexus-host`: load selected plugin, start the engine, show status (loaded / playing) | `crates/nexus-app/src/app.rs`. |
+| ⬜ | T31 | **Device-selection UI**: dropdowns for audio output device (and input), sample rate/buffer size, and MIDI input source; apply selection to the engine (restart stream on change) | new `crates/nexus-app/src/devices.rs`. Enumerate via `cpal`/`midir`; persist last choice via the config file (T25). |
 
 ## Feature 7: Plugin editor embedding
 

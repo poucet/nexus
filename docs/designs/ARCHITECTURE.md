@@ -31,15 +31,29 @@ Implications:
 
 Three layers, decoupled:
 
-1. **`nexus-host`** — UI-agnostic engine. Discovery, format-agnostic plugin
-   instances (CLAP via `clack`, VST3 via Rust SDK bindings), and an audio/MIDI
-   engine (CPAL + midir). Exposes commands/state; knows nothing about the UI.
-2. **Native plugin-window embedding** — creates the child native window and
-   parents the editor in. Needed by *any* UI. For the MVP it lives in
-   `nexus-app`; extract to its own crate when a second UI (web DAW) needs it.
+1. **`nexus-host`** — UI-agnostic, **device-agnostic** hosting library.
+   Discovery, format-agnostic plugin instances (CLAP via `clack`, VST3 via Rust
+   SDK bindings), and the `PluginInstance` / `AudioProcessor` surface. It has
+   **no audio/MIDI hardware dependency** — it exposes a plugin's `AudioProcessor`
+   for a *driver* to run, and knows nothing about CPAL, MIDI devices, or the UI.
+2. **`nexus-app`** — the standalone driver + UI. Owns the **CPAL** audio devices,
+   **MIDI** input (`midir`), and the realtime callback that pulls audio from the
+   host's `AudioProcessor` and feeds it MIDI; plus the egui UI, including
+   **device selection** (audio in/out devices, MIDI sources). Also hosts the
+   native plugin-window embedding (the child window the editor parents into) —
+   extract that to its own crate when a second UI (web DAW) needs it.
 3. **App UI** — swappable. MVP is **egui** (`nexus-app`). The DAW UI is decided
    later and can be web (arrangement/mixer in web, editors as floating native
    windows) while reusing layers 1 and 2.
+
+### Why device I/O lives in `nexus-app`, not `nexus-host`
+
+`nexus-wrap` (a plugin) receives its audio and MIDI **from the host DAW**, never
+from hardware. If CPAL/`midir` lived in `nexus-host`, every `nexus-wrap` build
+would drag in audio-device code it must never use. So hardware I/O is strictly an
+*application* concern: `nexus-host` stays a pure library that processes whatever
+buffers/events it's handed, and `nexus-app` is the one that sources them from
+real devices.
 
 ### Why egui for the MVP, not web
 
