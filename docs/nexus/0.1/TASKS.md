@@ -7,34 +7,6 @@ for the design rationale.
 All tasks are Phase 01 unless noted. IDs are `T{N}`. Status: ⬜ todo / 🔄 in
 progress / ✅ done.
 
-| Task | Status | Pri | Feature | Complexity |
-|------|--------|-----|---------|------------|
-| T1  | ✅ | P0 | 1 Discovery | S |
-| T2  | ✅ | P0 | 1 Discovery | S |
-| T3  | ⬜ | P0 | 1 Discovery | M |
-| T25 | ✅ | P1 | 1 Discovery | S |
-| T4  | ✅ | P0 | 2 Host core | M |
-| T5  | ✅ | P0 | 2 Host core | S |
-| T6  | ⬜ | P0 | 3 CLAP | M |
-| T7  | ⬜ | P0 | 3 CLAP | S |
-| T8  | ⬜ | P0 | 3 CLAP | M |
-| T9  | ⬜ | P0 | 3 CLAP | M |
-| T10 | ⬜ | P0 | 4 VST3 | M |
-| T11 | ⬜ | P0 | 4 VST3 | S |
-| T12 | ⬜ | P0 | 4 VST3 | L |
-| T13 | ⬜ | P0 | 4 VST3 | M |
-| T14 | ⬜ | P0 | 5 Engine | M |
-| T15 | ⬜ | P0 | 5 Engine | M |
-| T16 | ⬜ | P0 | 5 Engine | S |
-| T17 | ⬜ | P0 | 6 App shell | M |
-| T18 | ⬜ | P0 | 6 App shell | M |
-| T19 | ⬜ | P0 | 6 App shell | S |
-| T20 | ⬜ | P0 | 7 Embedding | L |
-| T21 | ⬜ | P0 | 7 Embedding | M |
-| T22 | ⬜ | P0 | 7 Embedding | M |
-| T23 | ⬜ | P0 | 8 Integration | M |
-| T24 | ⬜ | P1 | 9 Errors | S |
-
 ---
 
 ## Feature 1: Plugin discovery & catalog
