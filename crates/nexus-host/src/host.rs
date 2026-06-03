@@ -111,6 +111,20 @@ pub trait PluginInstance {
         None
     }
 
+    /// Serialize the plugin's full state to an opaque chunk. The bytes are
+    /// meaningful only to that plugin and round-trip through
+    /// [`load_state`](Self::load_state).
+    fn save_state(&mut self) -> Result<Vec<u8>, HostError> {
+        Err(HostError::Load("plugin does not support state".into()))
+    }
+
+    /// Restore plugin state from a chunk previously produced by
+    /// [`save_state`](Self::save_state).
+    fn load_state(&mut self, data: &[u8]) -> Result<(), HostError> {
+        let _ = data;
+        Err(HostError::Load("plugin does not support state".into()))
+    }
+
     /// The plugin's native editor, or `None` if it exposes no GUI.
     fn editor(&mut self) -> Option<&mut dyn Editor> {
         None
