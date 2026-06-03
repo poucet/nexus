@@ -28,6 +28,14 @@ crossbeam-channel = "0.5"
 # Pinned to 0.31 — newer egui (0.34) requires rustc 1.92; we target 1.90.
 egui = "0.31"
 
+# nexus-app: windowing + audio/MIDI devices + file dialogs.
+eframe = "0.31"
+cpal = "0.15"
+midir = "0.10"
+rtrb = "0.3"
+rfd = "0.15"
+env_logger = "0.11"
+
 # Used by the xtask build helper.
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
