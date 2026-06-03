@@ -41,7 +41,7 @@ format-agnostic capability to `PluginInstance` (T4) that the egui app and, later
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| ⬜ | T6 | Add `clack-host` + `clack-extensions` (workspace deps); host infrastructure extensions: `log`, `thread-check`, `timer-support` (+ stubs for `thread-pool`, `event-registry`) | new `crates/nexus-host/src/clap/host.rs`. Mirror `droplets`' clack git pin. |
+| ✅ | T6 | Add `clack-host` + `clack-extensions` (workspace deps); host infrastructure extensions: `log`, `thread-check`, `timer-support` (+ stubs for `thread-pool`, `event-registry`) | `crates/nexus-host/src/clap/{mod,host}.rs` — `NexusHost` handlers (shared/main-thread), `host_info()`, main-thread message channel, `log` extension registered + forwarded to the `log` crate. clack pinned to rev `f874e858`. thread-check is provided by clack automatically; `timer`/`gui` registration deferred to T29. |
 | ⬜ | T7 | CLAP factory probe: dlopen bundle, read `clap_plugin_factory` descriptors → `(id, name, vendor)` for the catalog (T3) | new `crates/nexus-host/src/clap/probe.rs`. Cheap; no instantiation. |
 | ⬜ | T8 | Instantiate + activate behind `PluginInstance` (T4); negotiate sample-rate/block-size; `render` mode | new `crates/nexus-host/src/clap/instance.rs`. |
 | ⬜ | T9 | Audio + Note I/O: `audio-ports` + `audio-ports-config` layout, `note-ports`, transport; `process()` maps F5 buffers/events to `clap_process` | new `crates/nexus-host/src/clap/process.rs`, `clap/ports.rs`. Adds `audio_ports()`/`note_ports()` to the trait. |

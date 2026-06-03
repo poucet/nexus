@@ -19,6 +19,11 @@ nexus-host = { path = "crates/nexus-host" }
 thiserror = "2"
 log = "0.4"
 
+# CLAP hosting via clack, pinned to a known-good revision (mirrors droplets).
+clack-host = { git = "https://github.com/prokopyl/clack.git", rev = "f874e858ad576c601367b3038af5088a4e671744" }
+clack-extensions = { git = "https://github.com/prokopyl/clack.git", rev = "f874e858ad576c601367b3038af5088a4e671744", features = ["clack-host", "log", "params", "audio-ports", "note-ports", "timer"] }
+crossbeam-channel = "0.5"
+
 # Used by the xtask build helper.
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

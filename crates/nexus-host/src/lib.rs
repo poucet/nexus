@@ -9,6 +9,7 @@
 //! The design intentionally hides the differences between plugin formats behind
 //! a single interface so that callers never need to branch on VST3 vs. CLAP.
 
+pub mod clap;
 pub mod discovery;
 pub mod host;
 pub mod process;
