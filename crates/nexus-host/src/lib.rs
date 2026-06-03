@@ -14,4 +14,6 @@ pub mod discovery;
 pub mod host;
 pub mod process;
 
-pub use host::{AudioConfig, Editor, Host, HostError, PluginFormat, PluginInstance};
+pub use host::{
+    AudioConfig, Editor, Host, HostError, PluginDescriptor, PluginFormat, PluginInstance,
+};

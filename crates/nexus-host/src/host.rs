@@ -33,6 +33,21 @@ pub enum HostError {
     Load(String),
 }
 
+/// Static metadata about a plugin, read from its factory *without*
+/// instantiating it. Produced by the per-format probes and assembled into the
+/// discovery catalog.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginDescriptor {
+    /// Stable unique identifier, e.g. `com.u-he.diva`.
+    pub id: String,
+    /// User-facing name, if the plugin provides one.
+    pub name: Option<String>,
+    /// Vendor / manufacturer, if provided.
+    pub vendor: Option<String>,
+    /// Version string, if provided.
+    pub version: Option<String>,
+}
+
 /// Audio configuration negotiated with a plugin when it is activated. The host
 /// commits to never handing the plugin a block larger than `max_block_frames`.
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -6,3 +6,4 @@
 //! (see [`PLUGIN_EXTENSIONS.md`](../../../docs/designs/PLUGIN_EXTENSIONS.md)).
 
 pub mod host;
+pub mod probe;
