@@ -14,7 +14,7 @@ progress / ✅ done.
 | T3  | ⬜ | P0 | 1 Discovery | M |
 | T25 | ✅ | P1 | 1 Discovery | S |
 | T4  | ⬜ | P0 | 2 Host core | M |
-| T5  | ⬜ | P0 | 2 Host core | S |
+| T5  | 🔄 | P0 | 2 Host core | S |
 | T6  | ⬜ | P0 | 3 CLAP | M |
 | T7  | ⬜ | P0 | 3 CLAP | S |
 | T8  | ⬜ | P0 | 3 CLAP | M |
@@ -57,7 +57,7 @@ The seam every format and the UI sit behind. Extend the existing `Host`/
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
 | ⬜ | T4 | `PluginInstance` trait (activate, start/stop processing, process, editor handle) + `PluginRef::load() -> Box<dyn PluginInstance>` dispatching on format | new `crates/nexus-host/src/host.rs`; move `Host`/`HostError`/`PluginFormat` out of `lib.rs` into it. |
-| ⬜ | T5 | Shared audio/event buffer types: interleaved/planar audio buffers, note/MIDI event list passed to `process` | new `crates/nexus-host/src/process.rs`. Keep allocation-free on the audio path. |
+| 🔄 | T5 | Shared audio/event buffer types: interleaved/planar audio buffers, note/MIDI event list passed to `process` | new `crates/nexus-host/src/process.rs`. Keep allocation-free on the audio path. |
 
 ## Feature 3: CLAP hosting (via `clack`)
 
