@@ -13,7 +13,7 @@ progress / ✅ done.
 | T2  | ✅ | P0 | 1 Discovery | S |
 | T3  | ⬜ | P0 | 1 Discovery | M |
 | T25 | ✅ | P1 | 1 Discovery | S |
-| T4  | ⬜ | P0 | 2 Host core | M |
+| T4  | ✅ | P0 | 2 Host core | M |
 | T5  | ✅ | P0 | 2 Host core | S |
 | T6  | ⬜ | P0 | 3 CLAP | M |
 | T7  | ⬜ | P0 | 3 CLAP | S |
@@ -56,7 +56,7 @@ The seam every format and the UI sit behind. Extend the existing `Host`/
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| ⬜ | T4 | `PluginInstance` trait (activate, start/stop processing, process, editor handle) + `PluginRef::load() -> Box<dyn PluginInstance>` dispatching on format | new `crates/nexus-host/src/host.rs`; move `Host`/`HostError`/`PluginFormat` out of `lib.rs` into it. |
+| ✅ | T4 | `PluginInstance` trait (activate, start/stop processing, process, editor handle) + `Host::load(format, path) -> Box<dyn PluginInstance>` dispatching on format | `crates/nexus-host/src/host.rs` — moved `PluginFormat`/`HostError`/`Host` here (re-exported from `lib.rs`); added `PluginInstance` + `Editor` traits, `AudioConfig`, and `Host::load` dispatch (backends return `NotImplemented` until T8/T12). Used `Host::load` not `PluginRef::load` (PluginRef is T3). 2 tests. |
 | ✅ | T5 | Shared audio/event buffer types: interleaved/planar audio buffers, note/MIDI event list passed to `process` | `crates/nexus-host/src/process.rs` — `AudioBuffer` (planar, reuse via `clear`/`set_frames`), `Event` (NoteOn/Off + raw `Midi`), `EventBuffer`, `ProcessBlock`. Alloc-free per block. 5 tests. |
 
 ## Feature 3: CLAP hosting (via `clack`)
