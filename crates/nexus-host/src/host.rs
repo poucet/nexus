@@ -56,34 +56,44 @@ pub struct AudioConfig {
     pub max_block_frames: usize,
 }
 
-/// A loaded, format-agnostic plugin instance.
+/// A loaded plugin, owned on the **main thread**.
 ///
-/// Lifecycle: [`activate`](Self::activate) once with the audio config, then
-/// [`start_processing`](Self::start_processing) before the first block and
-/// [`stop_processing`](Self::stop_processing) when pausing;
-/// [`deactivate`](Self::deactivate) to tear down. [`process`](Self::process)
-/// runs on the audio thread and must be realtime-safe; the rest is main-thread.
-pub trait PluginInstance: Send {
-    /// Prepare to process at the given sample rate and maximum block size.
-    fn activate(&mut self, config: AudioConfig) -> Result<(), HostError>;
+/// Holds the main-thread concerns (params, state, editor — added per aspect)
+/// and produces the realtime audio half via [`activate`](Self::activate). This
+/// mirrors how both CLAP (clack) and VST3 split a plugin: a non-`Send`
+/// main-thread object plus a separate `Send` audio processor. The engine keeps
+/// the instance here and moves the [`AudioProcessor`] onto the audio thread.
+pub trait PluginInstance {
+    /// Activate at the given sample rate / max block size, returning the
+    /// audio-thread processor. The instance stays on the main thread.
+    fn activate(&mut self, config: AudioConfig) -> Result<Box<dyn AudioProcessor>, HostError>;
 
-    /// Inverse of [`activate`](Self::activate). Idempotent.
+    /// Deactivate, after the processor has been stopped and dropped. Idempotent.
     fn deactivate(&mut self);
-
-    /// Begin audio processing. Called on the audio thread before the first
-    /// block after activation.
-    fn start_processing(&mut self) -> Result<(), HostError>;
-
-    /// End audio processing. The instance may be re-started later.
-    fn stop_processing(&mut self);
-
-    /// Render one block. Realtime-safe: no allocation, locking, or I/O.
-    fn process(&mut self, block: &mut ProcessBlock<'_>);
 
     /// The plugin's native editor, or `None` if it exposes no GUI.
     fn editor(&mut self) -> Option<&mut dyn Editor> {
         None
     }
+}
+
+/// The **audio-thread** half of a plugin: realtime block processing.
+///
+/// Returned by [`PluginInstance::activate`] and `Send` so the engine can move
+/// it onto the realtime audio callback.
+pub trait AudioProcessor: Send {
+    /// Begin processing — called once on the audio thread before the first
+    /// block. The processor may be restarted after [`stop_processing`].
+    ///
+    /// [`stop_processing`]: Self::stop_processing
+    fn start_processing(&mut self) -> Result<(), HostError>;
+
+    /// Stop processing. The processor can be restarted with
+    /// [`start_processing`](Self::start_processing).
+    fn stop_processing(&mut self);
+
+    /// Render one block. Realtime-safe: no allocation, locking, or I/O.
+    fn process(&mut self, block: &mut ProcessBlock<'_>);
 }
 
 /// Handle to a plugin's native editor view.

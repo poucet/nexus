@@ -16,5 +16,6 @@ pub mod process;
 
 pub use discovery::catalog::{PluginCatalog, PluginRef};
 pub use host::{
-    AudioConfig, Editor, Host, HostError, PluginDescriptor, PluginFormat, PluginInstance,
+    AudioConfig, AudioProcessor, Editor, Host, HostError, PluginDescriptor, PluginFormat,
+    PluginInstance,
 };
