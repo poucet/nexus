@@ -20,6 +20,6 @@ pub mod ui;
 pub use discovery::catalog::{PluginCatalog, PluginRef};
 pub use preset::Preset;
 pub use host::{
-    AudioConfig, AudioProcessor, Editor, Host, HostError, ParamInfo, PluginDescriptor,
-    PluginFormat, PluginInstance, VoiceInfo,
+    AudioConfig, AudioProcessor, Host, HostError, ParamInfo, PluginDescriptor, PluginFormat,
+    PluginInstance, VoiceInfo,
 };

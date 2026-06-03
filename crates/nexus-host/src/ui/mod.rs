@@ -21,14 +21,16 @@ pub struct WrapperUi {
 /// `Host`, devices, file dialogs, and editor window).
 #[derive(Debug, Default, Clone)]
 pub struct WrapperUiActions {
-    /// Load this plugin.
+    /// Load this plugin (selecting one in the dropdown loads it immediately).
     pub load: Option<PluginRef>,
+    /// "Open editor" was clicked (reopen the plugin's GUI window).
+    pub open_editor: bool,
     /// "Save preset…" was clicked.
     pub save_preset: bool,
     /// "Load preset…" was clicked.
     pub load_preset: bool,
-    /// Screen-space rect reserved for the plugin's native editor — the app
-    /// parents the editor child window here.
+    /// Screen-space rect reserved for an embedded plugin editor (used by
+    /// `nexus-wrap`; the standalone app opens a floating window instead).
     pub editor_rect: Option<egui::Rect>,
 }
 
@@ -48,48 +50,70 @@ impl WrapperUi {
         let mut actions = WrapperUiActions::default();
         let plugins = catalog.plugins();
 
+        ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.label("Plugin:");
+            ui.label("Plugin");
             let current = self
                 .selected
                 .and_then(|i| plugins.get(i))
                 .map(|p| p.display_name().to_string())
-                .unwrap_or_else(|| "— select —".to_string());
+                .unwrap_or_else(|| "Select a plugin…".to_string());
 
             egui::ComboBox::from_id_salt("nexus-plugin-selector")
+                .width(280.0)
                 .selected_text(current)
                 .show_ui(ui, |ui| {
                     for (i, plugin) in plugins.iter().enumerate() {
-                        let label = format!("{} ({:?})", plugin.display_name(), plugin.format);
-                        if ui.selectable_label(self.selected == Some(i), label).clicked() {
+                        let selected = self.selected == Some(i);
+                        let label = format!("{}  ·  {:?}", plugin.display_name(), plugin.format);
+                        // Selecting a plugin loads it immediately — no Load button.
+                        if ui.selectable_label(selected, label).clicked() && !selected {
                             self.selected = Some(i);
+                            actions.load = plugins.get(i).cloned();
                         }
                     }
                 });
 
-            let can_load = self.selected.and_then(|i| plugins.get(i)).is_some();
-            if ui.add_enabled(can_load, egui::Button::new("Load")).clicked() {
-                actions.load = self.selected.and_then(|i| plugins.get(i)).cloned();
+            if self.loaded_label.is_some() {
+                if ui.button("🎛 Editor").clicked() {
+                    actions.open_editor = true;
+                }
+                if ui.button("💾 Save preset…").clicked() {
+                    actions.save_preset = true;
+                }
+                if ui.button("📂 Load preset…").clicked() {
+                    actions.load_preset = true;
+                }
+            } else if ui.button("📂 Load preset…").clicked() {
+                actions.load_preset = true;
             }
         });
 
-        ui.horizontal(|ui| match &self.loaded_label {
-            Some(label) => {
-                ui.label(format!("Loaded: {label}"));
-                actions.save_preset = ui.button("Save preset…").clicked();
-                actions.load_preset = ui.button("Load preset…").clicked();
-            }
-            None => {
-                ui.weak("No plugin loaded");
-            }
+        ui.add_space(6.0);
+
+        // Central area: a framed panel. For the standalone app the plugin editor
+        // is a separate floating window, so this shows status; `nexus-wrap`
+        // embeds the editor into `editor_rect`.
+        let frame = egui::Frame::group(ui.style());
+        let inner = frame.show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            ui.vertical_centered(|ui| {
+                ui.add_space(48.0);
+                match &self.loaded_label {
+                    Some(label) => {
+                        ui.heading(label);
+                        ui.add_space(4.0);
+                        ui.weak("Editor is open in a separate window — click 🎛 Editor to reopen.");
+                    }
+                    None => {
+                        ui.heading("No plugin loaded");
+                        ui.add_space(4.0);
+                        ui.weak("Pick one from the dropdown above to load it.");
+                    }
+                }
+            });
         });
-
-        ui.separator();
-
-        // Reserve the remaining space for the plugin's native editor; the app
-        // positions the child window into this rect.
-        let (rect, _) = ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
-        actions.editor_rect = Some(rect);
+        actions.editor_rect = Some(inner.response.rect);
 
         actions
     }

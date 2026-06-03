@@ -12,6 +12,7 @@ use std::path::Path;
 use clack_host::prelude::*;
 use crossbeam_channel::{Receiver, unbounded};
 
+use crate::clap::gui::ClapEditor;
 use crate::clap::host::{
     MainThreadMessage, NexusHost, NexusHostMainThread, NexusHostShared, host_info,
 };
@@ -26,7 +27,9 @@ pub struct ClapPluginInstance {
     /// The clack plugin instance.
     instance: PluginInstance<NexusHost>,
     /// Drains main-thread callback requests posted by the plugin.
-    _main_thread_messages: Receiver<MainThreadMessage>,
+    messages: Receiver<MainThreadMessage>,
+    /// The plugin's floating editor window, if open.
+    editor: Option<ClapEditor>,
 }
 
 impl ClapPluginInstance {
@@ -54,7 +57,8 @@ impl ClapPluginInstance {
         Ok(Self {
             _entry: entry,
             instance,
-            _main_thread_messages: receiver,
+            messages: receiver,
+            editor: None,
         })
     }
 }
@@ -116,6 +120,38 @@ impl HostPluginInstance for ClapPluginInstance {
 
     fn voice_info(&mut self) -> Option<crate::host::VoiceInfo> {
         crate::clap::info::voice_info(&mut self.instance)
+    }
+
+    fn open_editor(&mut self) -> Result<(), HostError> {
+        if self.editor.is_some() {
+            return Ok(());
+        }
+        self.editor = Some(ClapEditor::open_floating(&mut self.instance)?);
+        Ok(())
+    }
+
+    fn close_editor(&mut self) {
+        if let Some(editor) = self.editor.take() {
+            editor.destroy(&mut self.instance);
+        }
+    }
+
+    fn pump(&mut self) {
+        // Service main-thread callbacks the plugin requested (drives its GUI).
+        let mut pending = false;
+        while self.messages.try_recv().is_ok() {
+            pending = true;
+        }
+        if pending {
+            self.instance.call_on_main_thread_callback();
+        }
+    }
+}
+
+impl Drop for ClapPluginInstance {
+    fn drop(&mut self) {
+        // Tear down the editor window before the instance goes away.
+        self.close_editor();
     }
 }
 

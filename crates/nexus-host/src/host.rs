@@ -150,10 +150,18 @@ pub trait PluginInstance {
         None
     }
 
-    /// The plugin's native editor, or `None` if it exposes no GUI.
-    fn editor(&mut self) -> Option<&mut dyn Editor> {
-        None
+    /// Open the plugin's editor (a floating native window for now). Returns an
+    /// error if the plugin has no GUI, or none compatible with this host.
+    fn open_editor(&mut self) -> Result<(), HostError> {
+        Err(HostError::Load("plugin has no editor".into()))
     }
+
+    /// Close the plugin's editor if it is open. Idempotent.
+    fn close_editor(&mut self) {}
+
+    /// Run any main-thread work the plugin has requested (drives its GUI). Call
+    /// regularly from the UI thread while a plugin is loaded.
+    fn pump(&mut self) {}
 }
 
 /// The **audio-thread** half of a plugin: realtime block processing.
@@ -174,14 +182,6 @@ pub trait AudioProcessor: Send {
     /// Render one block. Realtime-safe: no allocation, locking, or I/O.
     fn process(&mut self, block: &mut ProcessBlock<'_>);
 }
-
-/// Handle to a plugin's native editor view.
-///
-/// The window-embedding API (opening against a parent window handle, size
-/// negotiation, close) is added with the editor-embedding tasks; today this is
-/// the seam the host holds, and `PluginInstance::editor()` returning `Some`
-/// signals that a plugin has a GUI to show.
-pub trait Editor: Send {}
 
 /// Entry point for hosting plugins.
 ///

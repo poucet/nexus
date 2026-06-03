@@ -26,7 +26,15 @@ pub struct NexusApp {
 }
 
 impl NexusApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // A little breathing room and dark theme — the defaults are cramped.
+        cc.egui_ctx.set_visuals(egui::Visuals::dark());
+        let mut style = (*cc.egui_ctx.style()).clone();
+        style.spacing.item_spacing = egui::vec2(8.0, 8.0);
+        style.spacing.button_padding = egui::vec2(10.0, 6.0);
+        style.visuals.widgets.inactive.corner_radius = 4.into();
+        cc.egui_ctx.set_style(style);
+
         let catalog = PluginCatalog::scan();
         let (engine, status) = match Engine::start() {
             Ok(engine) => {
@@ -82,8 +90,14 @@ impl NexusApp {
         }
     }
 
-    /// Activate an instance against the engine and start playing it.
+    /// Activate an instance against the engine, start playing it, and open its
+    /// editor (floating window).
     fn play(&mut self, mut instance: Box<dyn PluginInstance>, label: String) {
+        // Close the previous plugin's editor before swapping it out.
+        if let Some(old) = self.instance.as_mut() {
+            old.close_editor();
+        }
+
         match &self.engine {
             Some(engine) => {
                 let config = AudioConfig {
@@ -100,6 +114,13 @@ impl NexusApp {
             }
             None => self.status = "No audio engine — cannot play".into(),
         }
+
+        // Open the plugin's editor; plenty of plugins have no GUI, so a failure
+        // here is informational, not an error.
+        if let Err(e) = instance.open_editor() {
+            self.status = format!("{} (no editor: {e})", self.status);
+        }
+
         self.wrapper.set_loaded(Some(label));
         self.instance = Some(instance);
     }
@@ -244,11 +265,23 @@ impl eframe::App for NexusApp {
         if let Some(plugin) = actions.load {
             self.load_plugin(&plugin);
         }
+        if actions.open_editor {
+            if let Some(instance) = self.instance.as_mut() {
+                if let Err(e) = instance.open_editor() {
+                    self.status = format!("open editor failed: {e}");
+                }
+            }
+        }
         if actions.save_preset {
             self.save_preset();
         }
         if actions.load_preset {
             self.load_preset();
+        }
+
+        // Drive the loaded plugin's main-thread work (its GUI).
+        if let Some(instance) = self.instance.as_mut() {
+            instance.pump();
         }
 
         // Keep repainting so held computer keys / on-screen keys track releases.

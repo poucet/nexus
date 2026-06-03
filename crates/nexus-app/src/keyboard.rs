@@ -73,12 +73,22 @@ impl VirtualKeyboard {
             }
         });
 
-        // On-screen clickable keys (held while the pointer is down on them).
+        // On-screen clickable keys (held while the pointer is down on them),
+        // drawn like piano keys: light naturals, dark sharps.
         ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
             for (offset, name) in NOTE_NAMES.iter().enumerate() {
                 let note = (base + offset as i32).clamp(0, 127) as u8;
-                let response = ui.add(egui::Button::new(*name).min_size(egui::vec2(30.0, 64.0)));
-                if response.is_pointer_button_down_on() {
+                let is_sharp = matches!(offset % 12, 1 | 3 | 6 | 8 | 10);
+                let (fill, text_color, width) = if is_sharp {
+                    (egui::Color32::from_gray(35), egui::Color32::from_gray(220), 26.0)
+                } else {
+                    (egui::Color32::from_gray(235), egui::Color32::from_gray(20), 34.0)
+                };
+                let button = egui::Button::new(egui::RichText::new(*name).color(text_color))
+                    .fill(fill)
+                    .min_size(egui::vec2(width, 72.0));
+                if ui.add(button).is_pointer_button_down_on() {
                     pressed.insert(note);
                 }
             }

@@ -107,8 +107,8 @@ both CLAP and VST3 views attach into it.
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| ⬜ | T20 | Native child window (macOS NSView) parented to the egui window via `raw-window-handle`; reserve a rect, handle move/resize | new `crates/nexus-app/src/editor_window.rs`. The reusable embedding primitive (extract to its own crate when the web DAW needs it). |
-| ⬜ | T21 | CLAP GUI extension: `create` / `set_parent` / `set_scale` / `show`, size negotiation into the child window | new `crates/nexus-host/src/clap/gui.rs`. |
+| ⬜ | T20 | Native child window (macOS NSView) parented to the egui window via `raw-window-handle`; reserve a rect, handle move/resize | new `crates/nexus-app/src/editor_window.rs`. **Deferred** — started with a *floating* plugin window (T21) instead, which avoids native-view embedding. This embeds the editor into the host window (uses the wrapper UI's `editor_rect`); revisit after floating is confirmed. |
+| ✅ | T21 | CLAP GUI extension: floating editor window (`create` / `suggest_title` / `show` / `destroy`); main-thread callback pump | `crates/nexus-host/src/clap/gui.rs` (`ClapEditor::open_floating`) + `PluginInstance::open_editor`/`close_editor`/`pump`; `nexus-app` auto-opens on load and pumps each frame. Compile-verified; runtime at T23. Host-side GUI callbacks (resize/close) not registered yet (T29). |
 | ⬜ | T22 | VST3 `IPlugView`: `attached(parent, "NSView")`, `getSize`/`onSize`, `IPlugFrame::resizeView` | new `crates/nexus-host/src/vst3/editor.rs`. |
 
 ## Feature 8: End-to-end integration

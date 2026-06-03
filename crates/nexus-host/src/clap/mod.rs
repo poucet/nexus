@@ -5,6 +5,7 @@
 //! instantiation, processing, and per-aspect extensions
 //! (see [`PLUGIN_EXTENSIONS.md`](../../../docs/designs/PLUGIN_EXTENSIONS.md)).
 
+pub mod gui;
 pub mod host;
 pub mod info;
 pub mod instance;
