@@ -67,6 +67,19 @@ impl EditorWindow {
             .setContentSize(NSSize::new(width.max(1.0), height.max(1.0)));
     }
 
+    /// Shrink/grow the window to exactly fit the plugin's view (the last
+    /// subview the plugin added to our content view). More reliable than the
+    /// plugin's reported `get_size`, which can over-report.
+    pub fn fit_to_plugin_view(&self) {
+        let Some(content) = self.window.contentView() else { return };
+        let Some(view) = content.subviews().lastObject() else { return };
+        let size = view.frame().size;
+        if size.width >= 1.0 && size.height >= 1.0 {
+            self.window.setContentSize(size);
+            self.window.center();
+        }
+    }
+
     /// Close the window.
     pub fn close(&self) {
         self.window.close();

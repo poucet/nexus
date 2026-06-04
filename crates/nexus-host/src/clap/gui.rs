@@ -85,10 +85,9 @@ impl ClapEditor {
         gui.show(handle)
             .map_err(|e| HostError::Load(format!("gui show: {e}")))?;
 
-        // The plugin may report a more accurate size once shown; match it.
-        if let Some(actual) = gui.get_size(handle) {
-            window.set_content_size(actual.width as f64, actual.height as f64);
-        }
+        // Size the window to the plugin's actual view rather than its reported
+        // `get_size`, which can over-report and leave empty margins.
+        window.fit_to_plugin_view();
 
         Ok(Self { gui, window: Some(window) })
     }
