@@ -70,17 +70,6 @@ impl EditorWindow {
             .setContentSize(NSSize::new(width.max(1.0), height.max(1.0)));
     }
 
-    /// Current content-area size in points.
-    pub fn content_size(&self) -> (f64, f64) {
-        match self.window.contentView() {
-            Some(view) => {
-                let size = view.bounds().size;
-                (size.width, size.height)
-            }
-            None => (0.0, 0.0),
-        }
-    }
-
     /// Make the plugin's view (the last subview it added) fill the content view
     /// and track its size, so the editor is actually visible and follows
     /// window resizes.

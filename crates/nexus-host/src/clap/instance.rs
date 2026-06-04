@@ -153,14 +153,8 @@ impl HostPluginInstance for ClapPluginInstance {
 
         if closed {
             self.close_editor();
-        } else {
-            if let (Some(size), Some(editor)) = (resize_to, self.editor.as_mut()) {
-                editor.resize(size);
-            }
-            // Follow user-driven window resizes (resizable plugins only).
-            if let Some(editor) = self.editor.as_mut() {
-                editor.sync_window_size(&mut self.instance);
-            }
+        } else if let (Some(size), Some(editor)) = (resize_to, self.editor.as_ref()) {
+            editor.resize(size);
         }
 
         if run_callback {
