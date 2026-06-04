@@ -10,7 +10,9 @@ use std::ffi::c_void;
 
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
-use objc2_app_kit::{NSBackingStoreType, NSWindow, NSWindowStyleMask};
+use objc2_app_kit::{
+    NSAutoresizingMaskOptions, NSBackingStoreType, NSWindow, NSWindowStyleMask,
+};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
 /// A native window whose content view hosts the plugin editor.
@@ -19,18 +21,20 @@ pub struct EditorWindow {
 }
 
 impl EditorWindow {
-    /// Open a titled, closable, resizable window of the given content size.
-    /// Returns `None` if not called on the main thread.
-    pub fn open(width: f64, height: f64, title: &str) -> Option<Self> {
+    /// Open a window of the given content size. It's resizable only if the
+    /// plugin supports resizing. Returns `None` if not on the main thread.
+    pub fn open(width: f64, height: f64, title: &str, resizable: bool) -> Option<Self> {
         let mtm = MainThreadMarker::new()?;
         let content_rect = NSRect::new(
             NSPoint::new(140.0, 140.0),
             NSSize::new(width.max(200.0), height.max(120.0)),
         );
-        let style = NSWindowStyleMask::Titled
+        let mut style = NSWindowStyleMask::Titled
             | NSWindowStyleMask::Closable
-            | NSWindowStyleMask::Miniaturizable
-            | NSWindowStyleMask::Resizable;
+            | NSWindowStyleMask::Miniaturizable;
+        if resizable {
+            style |= NSWindowStyleMask::Resizable;
+        }
 
         let window = unsafe {
             NSWindow::initWithContentRect_styleMask_backing_defer(
@@ -44,7 +48,6 @@ impl EditorWindow {
 
         unsafe {
             window.setTitle(&NSString::from_str(title));
-            // We own the window via `Retained`; don't let Cocoa free it on close.
             window.setReleasedWhenClosed(false);
             window.center();
             window.makeKeyAndOrderFront(None);
@@ -61,23 +64,34 @@ impl EditorWindow {
         }
     }
 
-    /// Resize the window's content area to the given size, keeping it on-screen.
+    /// Resize the content area to the given size.
     pub fn set_content_size(&self, width: f64, height: f64) {
         self.window
             .setContentSize(NSSize::new(width.max(1.0), height.max(1.0)));
     }
 
-    /// Shrink/grow the window to exactly fit the plugin's view (the last
-    /// subview the plugin added to our content view). More reliable than the
-    /// plugin's reported `get_size`, which can over-report.
-    pub fn fit_to_plugin_view(&self) {
+    /// Current content-area size in points.
+    pub fn content_size(&self) -> (f64, f64) {
+        match self.window.contentView() {
+            Some(view) => {
+                let size = view.bounds().size;
+                (size.width, size.height)
+            }
+            None => (0.0, 0.0),
+        }
+    }
+
+    /// Make the plugin's view (the last subview it added) fill the content view
+    /// and track its size, so the editor is actually visible and follows
+    /// window resizes.
+    pub fn layout_plugin_view(&self) {
         let Some(content) = self.window.contentView() else { return };
         let Some(view) = content.subviews().lastObject() else { return };
-        let size = view.frame().size;
-        if size.width >= 1.0 && size.height >= 1.0 {
-            self.window.setContentSize(size);
-            self.window.center();
-        }
+        let bounds = content.bounds();
+        view.setFrame(bounds);
+        view.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
+        );
     }
 
     /// Close the window.

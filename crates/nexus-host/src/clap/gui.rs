@@ -23,6 +23,12 @@ pub struct ClapEditor {
     /// The window we created for an embedded editor (none in floating mode).
     #[cfg(target_os = "macos")]
     window: Option<EditorWindow>,
+    /// Whether the plugin's GUI can be resized.
+    #[cfg(target_os = "macos")]
+    resizable: bool,
+    /// Last content size we told the plugin about, to debounce resize syncing.
+    #[cfg(target_os = "macos")]
+    last_size: (u32, u32),
 }
 
 impl ClapEditor {
@@ -58,6 +64,10 @@ impl ClapEditor {
                 gui,
                 #[cfg(target_os = "macos")]
                 window: None,
+                #[cfg(target_os = "macos")]
+                resizable: false,
+                #[cfg(target_os = "macos")]
+                last_size: (0, 0),
             });
         }
 
@@ -72,8 +82,10 @@ impl ClapEditor {
         handle: &mut PluginMainThreadHandle,
         size: GuiSize,
     ) -> Result<Self, HostError> {
-        let window = EditorWindow::open(size.width as f64, size.height as f64, "Nexus — Plugin")
-            .ok_or_else(|| HostError::Load("could not create editor window".into()))?;
+        let resizable = gui.can_resize(handle);
+        let window =
+            EditorWindow::open(size.width as f64, size.height as f64, "Nexus — Plugin", resizable)
+                .ok_or_else(|| HostError::Load("could not create editor window".into()))?;
 
         let clap_window = ClapWindow::from_cocoa_nsview(window.content_view_ptr());
         // SAFETY: the window outlives the editor — we destroy the editor (and
@@ -85,23 +97,58 @@ impl ClapEditor {
         gui.show(handle)
             .map_err(|e| HostError::Load(format!("gui show: {e}")))?;
 
-        // Size the window to the plugin's actual view rather than its reported
-        // `get_size`, which can over-report and leave empty margins.
-        window.fit_to_plugin_view();
+        // Make the plugin's view fill the window so it's actually visible (and
+        // tracks resizes).
+        window.layout_plugin_view();
 
-        Ok(Self { gui, window: Some(window) })
+        Ok(Self {
+            gui,
+            window: Some(window),
+            resizable,
+            last_size: (size.width, size.height),
+        })
     }
 
     /// Resize the editor window to `size` (driven by the plugin's
     /// `request_resize`).
-    pub fn resize(&self, size: GuiSize) {
+    pub fn resize(&mut self, size: GuiSize) {
         #[cfg(target_os = "macos")]
         if let Some(window) = &self.window {
             window.set_content_size(size.width as f64, size.height as f64);
+            window.layout_plugin_view();
+            self.last_size = (size.width, size.height);
         }
         #[cfg(not(target_os = "macos"))]
         let _ = size;
     }
+
+    /// If the user resized the window, tell the plugin so it re-lays-out its
+    /// view at the new size. No-op for non-resizable plugins.
+    #[cfg(target_os = "macos")]
+    pub fn sync_window_size(&mut self, instance: &mut PluginInstance<NexusHost>) {
+        if !self.resizable {
+            return;
+        }
+        let Some(window) = &self.window else { return };
+        let (w, h) = window.content_size();
+        let (w, h) = (w.round() as u32, h.round() as u32);
+        if w == 0 || h == 0 || (w, h) == self.last_size {
+            return;
+        }
+        self.last_size = (w, h);
+
+        let mut handle = instance.plugin_handle();
+        let requested = GuiSize { width: w, height: h };
+        let target = self.gui.adjust_size(&mut handle, requested).unwrap_or(requested);
+        let _ = self.gui.set_size(&mut handle, target);
+        if (target.width, target.height) != (w, h) {
+            window.set_content_size(target.width as f64, target.height as f64);
+            self.last_size = (target.width, target.height);
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn sync_window_size(&mut self, _instance: &mut PluginInstance<NexusHost>) {}
 
     #[cfg(not(target_os = "macos"))]
     fn open_embedded(
