@@ -21,6 +21,8 @@ plugins with enough metadata (name, vendor, format, path) to display and load.
 | ✅ | T2.5 | Config file with custom CLAP/VST3 plugin locations that **extend** the default search paths | `crates/nexus-host/src/discovery/config.rs` — TOML at `~/Library/Application Support/Nexus/config.toml` (override via `NEXUS_CONFIG`); `[plugins] clap=[...] vst3=[...]`; `~` expansion; missing/invalid non-fatal. `paths::search_paths` merges defaults + config, deduped; `scan` picks them up automatically. 6 tests. |
 | ✅ | T3 | `PluginCatalog` + `PluginRef { format, path, descriptor{ id, name, vendor } }`; assemble by probing each bundle's factory (delegates to CLAP probe T7 / VST3 probe T11) | `crates/nexus-host/src/discovery/catalog.rs` (re-exported from `lib.rs`) — `PluginCatalog::scan()` over `scan_all` + per-format probe; `display_name()` falls back to id; failures logged + skipped. Verified: assembles 24 CLAP plugins (VST3 skipped until T11). |
 
+| ✅ | T35 | **Catalog cache** so startup doesn't load/init every plugin: cache descriptors keyed by bundle path + mtime; only (re)probe new/changed bundles. Fixes VCV Rack (and others) running their entry init on every launch | `crates/nexus-host/src/discovery/cache.rs` + `PluginCatalog::load_or_scan()` (used by `nexus-app`). JSON cache at `~/Library/Application Support/Nexus/catalog-cache.json`; `PluginDescriptor` is now serde. First launch probes all; later launches load nothing unchanged. |
+
 ## Feature 2: Format-agnostic host core
 
 The seam every format and the UI sit behind. Extend the existing `Host`/

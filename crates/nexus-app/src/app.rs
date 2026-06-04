@@ -38,7 +38,9 @@ impl NexusApp {
         style.visuals.widgets.inactive.corner_radius = 4.into();
         cc.egui_ctx.set_style(style);
 
-        let catalog = PluginCatalog::scan();
+        // Use the cached scan so we don't load/initialize every plugin binary
+        // on startup — only new or changed bundles get probed.
+        let catalog = PluginCatalog::load_or_scan();
         let (engine, status) = match Engine::start() {
             Ok(engine) => {
                 let status = format!(

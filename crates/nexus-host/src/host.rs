@@ -40,7 +40,7 @@ pub enum HostError {
 /// Static metadata about a plugin, read from its factory *without*
 /// instantiating it. Produced by the per-format probes and assembled into the
 /// discovery catalog.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PluginDescriptor {
     /// Stable unique identifier, e.g. `com.u-he.diva`.
     pub id: String,

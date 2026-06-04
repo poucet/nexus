@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use crate::PluginFormat;
 use crate::clap;
-use crate::discovery::scan;
+use crate::discovery::{cache, scan};
 use crate::host::PluginDescriptor;
 
 /// A single plugin the host can load: its format, the bundle containing it, and
@@ -58,6 +58,54 @@ impl PluginCatalog {
                 Err(e) => log::warn!("skipping plugin bundle: {e}"),
             }
         }
+        Self { plugins }
+    }
+
+    /// Like [`scan`](Self::scan), but reuses an on-disk cache so unchanged
+    /// bundles are **not** re-probed (and thus not loaded/initialized). Only new
+    /// or modified bundles are probed; the cache is then rewritten.
+    ///
+    /// This is what apps should use at startup — a plain `scan()` loads every
+    /// plugin's binary every time.
+    pub fn load_or_scan() -> Self {
+        let cached = cache::CatalogCache::load();
+        let mut fresh = cache::CatalogCache::default();
+        let mut plugins = Vec::new();
+
+        for (format, path) in scan::scan_all() {
+            // VST3 probing arrives in T11; skip those bundles for now.
+            if format != PluginFormat::Clap {
+                continue;
+            }
+
+            let mtime = cache::file_mtime(&path);
+            let descriptors = match (mtime, cached.entries.get(&path)) {
+                // Unchanged since last probe — reuse, without loading the binary.
+                (Some(m), Some(entry)) if entry.mtime == m => entry.descriptors.clone(),
+                // New or changed — probe it (loads the binary).
+                _ => match clap::probe::probe(&path) {
+                    Ok(descriptors) => descriptors,
+                    Err(e) => {
+                        log::warn!("skipping plugin bundle: {e}");
+                        continue;
+                    }
+                },
+            };
+
+            if let Some(m) = mtime {
+                fresh.entries.insert(
+                    path.clone(),
+                    cache::CacheEntry { mtime: m, descriptors: descriptors.clone() },
+                );
+            }
+            plugins.extend(descriptors.into_iter().map(|descriptor| PluginRef {
+                format,
+                path: path.clone(),
+                descriptor,
+            }));
+        }
+
+        fresh.save();
         Self { plugins }
     }
 
