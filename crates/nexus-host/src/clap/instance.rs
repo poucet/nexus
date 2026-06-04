@@ -9,7 +9,6 @@
 use std::ffi::CString;
 use std::path::Path;
 
-use clack_extensions::gui::GuiSize;
 use clack_host::prelude::*;
 use crossbeam_channel::{Receiver, unbounded};
 
@@ -141,20 +140,22 @@ impl HostPluginInstance for ClapPluginInstance {
         // Service whatever the plugin asked the main thread to do (drives the
         // editor: callbacks, resize, close).
         let mut run_callback = false;
-        let mut resize_to: Option<GuiSize> = None;
         let mut closed = false;
         while let Ok(message) = self.messages.try_recv() {
             match message {
                 MainThreadMessage::RunOnMainThread => run_callback = true,
-                MainThreadMessage::GuiResize(size) => resize_to = Some(size),
+                // The window tracks the plugin view via `fit()` each frame, so
+                // resize requests don't need explicit handling (and acting on
+                // them caused a feedback loop).
+                MainThreadMessage::GuiResize(_) => {}
                 MainThreadMessage::GuiClosed => closed = true,
             }
         }
 
         if closed {
             self.close_editor();
-        } else if let (Some(size), Some(editor)) = (resize_to, self.editor.as_ref()) {
-            editor.resize(size);
+        } else if let Some(editor) = self.editor.as_ref() {
+            editor.fit();
         }
 
         if run_callback {

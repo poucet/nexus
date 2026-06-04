@@ -72,10 +72,8 @@ impl ClapEditor {
         handle: &mut PluginMainThreadHandle,
         size: GuiSize,
     ) -> Result<Self, HostError> {
-        let resizable = gui.can_resize(handle);
-        let window =
-            EditorWindow::open(size.width as f64, size.height as f64, "Nexus — Plugin", resizable)
-                .ok_or_else(|| HostError::Load("could not create editor window".into()))?;
+        let window = EditorWindow::open(size.width as f64, size.height as f64, "Nexus — Plugin")
+            .ok_or_else(|| HostError::Load("could not create editor window".into()))?;
 
         let clap_window = ClapWindow::from_cocoa_nsview(window.content_view_ptr());
         // SAFETY: the window outlives the editor — we destroy the editor (and
@@ -87,23 +85,20 @@ impl ClapEditor {
         gui.show(handle)
             .map_err(|e| HostError::Load(format!("gui show: {e}")))?;
 
-        // Make the plugin's view fill the window so it's actually visible and
-        // follows window resizes (the plugin redraws into the resized view).
-        window.layout_plugin_view();
+        // Size the window to the plugin's view (and make it visible).
+        window.fit_to_plugin_view();
 
         Ok(Self { gui, window: Some(window) })
     }
 
-    /// Resize the editor window to `size` (driven by the plugin's
-    /// `request_resize`).
-    pub fn resize(&self, size: GuiSize) {
+    /// Track the plugin's editor size: size our window to the plugin's view.
+    /// Called each frame from the pump; never resizes the plugin's view, so it
+    /// can't feed back into a resize loop.
+    pub fn fit(&self) {
         #[cfg(target_os = "macos")]
         if let Some(window) = &self.window {
-            window.set_content_size(size.width as f64, size.height as f64);
-            window.layout_plugin_view();
+            window.fit_to_plugin_view();
         }
-        #[cfg(not(target_os = "macos"))]
-        let _ = size;
     }
 
     #[cfg(not(target_os = "macos"))]
