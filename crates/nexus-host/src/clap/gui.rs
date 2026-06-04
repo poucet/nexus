@@ -85,7 +85,23 @@ impl ClapEditor {
         gui.show(handle)
             .map_err(|e| HostError::Load(format!("gui show: {e}")))?;
 
+        // The plugin may report a more accurate size once shown; match it.
+        if let Some(actual) = gui.get_size(handle) {
+            window.set_content_size(actual.width as f64, actual.height as f64);
+        }
+
         Ok(Self { gui, window: Some(window) })
+    }
+
+    /// Resize the editor window to `size` (driven by the plugin's
+    /// `request_resize`).
+    pub fn resize(&self, size: GuiSize) {
+        #[cfg(target_os = "macos")]
+        if let Some(window) = &self.window {
+            window.set_content_size(size.width as f64, size.height as f64);
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = size;
     }
 
     #[cfg(not(target_os = "macos"))]

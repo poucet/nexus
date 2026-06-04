@@ -6,16 +6,19 @@
 //! the `log` extension; later tasks register `audio-ports`, `note-ports`,
 //! `params`, `timer`, and `gui`. Modeled on clack's official cpal host example.
 
+use clack_extensions::gui::{GuiSize, HostGui, HostGuiImpl};
 use clack_extensions::log::{HostLog, HostLogImpl, LogSeverity};
 use clack_host::prelude::*;
 use crossbeam_channel::Sender;
 
-/// Messages sent to the main thread from any of a plugin's threads. A plugin
-/// can ask (from any thread) for its main-thread callback to run; the audio and
-/// UI loops drain this channel.
+/// Messages sent to the main thread from any of a plugin's threads.
 pub enum MainThreadMessage {
     /// Run the plugin's `on_main_thread` callback.
     RunOnMainThread,
+    /// The plugin asked its editor window to resize to this size.
+    GuiResize(GuiSize),
+    /// The plugin's editor window was closed.
+    GuiClosed,
 }
 
 /// Identity this host reports to plugins.
@@ -38,7 +41,7 @@ impl HostHandlers for NexusHost {
     type AudioProcessor<'a> = ();
 
     fn declare_extensions(builder: &mut HostExtensions<Self>, _shared: &Self::Shared<'_>) {
-        builder.register::<HostLog>();
+        builder.register::<HostLog>().register::<HostGui>();
     }
 }
 
@@ -96,5 +99,29 @@ impl HostLogImpl for NexusHostShared {
             LogSeverity::Warning => log::warn!("[plugin] {message}"),
             _ => log::error!("[plugin] {message}"),
         }
+    }
+}
+
+/// Host-side `gui` extension: the plugin uses these to drive its editor window.
+/// We forward resize/close to the main thread (which owns the window) via the
+/// message channel.
+impl HostGuiImpl for NexusHostShared {
+    fn resize_hints_changed(&self) {}
+
+    fn request_resize(&self, new_size: GuiSize) -> Result<(), HostError> {
+        let _ = self.sender.send(MainThreadMessage::GuiResize(new_size));
+        Ok(())
+    }
+
+    fn request_show(&self) -> Result<(), HostError> {
+        Ok(())
+    }
+
+    fn request_hide(&self) -> Result<(), HostError> {
+        Ok(())
+    }
+
+    fn closed(&self, _was_destroyed: bool) {
+        let _ = self.sender.send(MainThreadMessage::GuiClosed);
     }
 }

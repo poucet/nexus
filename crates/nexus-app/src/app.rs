@@ -267,13 +267,6 @@ impl eframe::App for NexusApp {
         if let Some(plugin) = actions.load {
             self.load_plugin(&plugin);
         }
-        if actions.open_editor {
-            if let Some(instance) = self.instance.as_mut() {
-                if let Err(e) = instance.open_editor() {
-                    self.status = format!("open editor: {e}");
-                }
-            }
-        }
         if actions.save_preset {
             self.save_preset();
         }

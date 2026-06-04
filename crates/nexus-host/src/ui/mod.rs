@@ -23,8 +23,6 @@ pub struct WrapperUi {
 pub struct WrapperUiActions {
     /// Load this plugin (selecting one in the dropdown loads it immediately).
     pub load: Option<PluginRef>,
-    /// "Open editor" was clicked (reopen the plugin's GUI window).
-    pub open_editor: bool,
     /// "Save preset…" was clicked.
     pub save_preset: bool,
     /// "Load preset…" was clicked.
@@ -74,17 +72,10 @@ impl WrapperUi {
                     }
                 });
 
-            if self.loaded_label.is_some() {
-                if ui.button("🎛 Editor").clicked() {
-                    actions.open_editor = true;
-                }
-                if ui.button("💾 Save preset…").clicked() {
-                    actions.save_preset = true;
-                }
-                if ui.button("📂 Load preset…").clicked() {
-                    actions.load_preset = true;
-                }
-            } else if ui.button("📂 Load preset…").clicked() {
+            if self.loaded_label.is_some() && ui.button("💾 Save preset…").clicked() {
+                actions.save_preset = true;
+            }
+            if ui.button("📂 Load preset…").clicked() {
                 actions.load_preset = true;
             }
         });
@@ -103,7 +94,7 @@ impl WrapperUi {
                     Some(label) => {
                         ui.heading(label);
                         ui.add_space(4.0);
-                        ui.weak("Editor is open in a separate window — click 🎛 Editor to reopen.");
+                        ui.weak("Editor is open in a separate window.");
                     }
                     None => {
                         ui.heading("No plugin loaded");

@@ -61,6 +61,12 @@ impl EditorWindow {
         }
     }
 
+    /// Resize the window's content area to the given size, keeping it on-screen.
+    pub fn set_content_size(&self, width: f64, height: f64) {
+        self.window
+            .setContentSize(NSSize::new(width.max(1.0), height.max(1.0)));
+    }
+
     /// Close the window.
     pub fn close(&self) {
         self.window.close();

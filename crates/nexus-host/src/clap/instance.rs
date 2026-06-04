@@ -137,12 +137,21 @@ impl HostPluginInstance for ClapPluginInstance {
     }
 
     fn pump(&mut self) {
-        // Service main-thread callbacks the plugin requested (drives its GUI).
-        let mut pending = false;
-        while self.messages.try_recv().is_ok() {
-            pending = true;
+        // Service whatever the plugin asked the main thread to do (drives the
+        // editor: callbacks, resize, close).
+        let mut run_callback = false;
+        while let Ok(message) = self.messages.try_recv() {
+            match message {
+                MainThreadMessage::RunOnMainThread => run_callback = true,
+                MainThreadMessage::GuiResize(size) => {
+                    if let Some(editor) = &self.editor {
+                        editor.resize(size);
+                    }
+                }
+                MainThreadMessage::GuiClosed => self.close_editor(),
+            }
         }
-        if pending {
+        if run_callback {
             self.instance.call_on_main_thread_callback();
         }
     }
