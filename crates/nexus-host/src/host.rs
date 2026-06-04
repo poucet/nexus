@@ -150,14 +150,9 @@ pub trait PluginInstance {
         None
     }
 
-    /// Open the plugin's editor, parented into `parent` (embedded mode) or, if
-    /// the plugin only supports floating, in its own window. Returns an error if
-    /// the plugin has no GUI compatible with this host.
-    fn open_editor(
-        &mut self,
-        parent: &dyn raw_window_handle::HasWindowHandle,
-    ) -> Result<(), HostError> {
-        let _ = parent;
+    /// Open the plugin's editor (in its own window). Returns an error if the
+    /// plugin has no GUI compatible with this host.
+    fn open_editor(&mut self) -> Result<(), HostError> {
         Err(HostError::Load("plugin has no editor".into()))
     }
 

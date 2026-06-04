@@ -19,6 +19,11 @@ clack-host.workspace = true
 clack-extensions.workspace = true
 crossbeam-channel.workspace = true
 raw-window-handle.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-app-kit.workspace = true
+objc2-foundation.workspace = true
 egui = { workspace = true, optional = true }
 
 [features]

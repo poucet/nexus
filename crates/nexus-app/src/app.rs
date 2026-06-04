@@ -22,9 +22,6 @@ pub struct NexusApp {
     instance: Option<Box<dyn PluginInstance>>,
     /// Which catalog entry is loaded (for presets).
     loaded: Option<PluginRef>,
-    /// Set when a freshly-loaded plugin's editor should be opened (needs the
-    /// window handle, available in `update`).
-    pending_editor: bool,
     status: String,
 }
 
@@ -65,7 +62,6 @@ impl NexusApp {
             selected_device,
             instance: None,
             loaded: None,
-            pending_editor: false,
             status,
         }
     }
@@ -121,11 +117,14 @@ impl NexusApp {
             None => self.status = "No audio engine — cannot play".into(),
         }
 
+        // Open the plugin's editor in its own window (no-op error if it has no
+        // GUI — plenty of plugins don't).
+        if let Err(e) = instance.open_editor() {
+            self.status = format!("{} (no editor: {e})", self.status);
+        }
+
         self.wrapper.set_loaded(Some(label));
         self.instance = Some(instance);
-        // The editor needs the window handle (only available in `update`), so
-        // defer opening it to the next frame.
-        self.pending_editor = true;
     }
 
     fn load_plugin(&mut self, plugin: &PluginRef) {
@@ -198,7 +197,7 @@ impl NexusApp {
 }
 
 impl eframe::App for NexusApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("nexus-status").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.strong("Nexus");
@@ -268,10 +267,9 @@ impl eframe::App for NexusApp {
         if let Some(plugin) = actions.load {
             self.load_plugin(&plugin);
         }
-        let pending_editor = std::mem::take(&mut self.pending_editor);
-        if actions.open_editor || pending_editor {
+        if actions.open_editor {
             if let Some(instance) = self.instance.as_mut() {
-                if let Err(e) = instance.open_editor(&*frame) {
+                if let Err(e) = instance.open_editor() {
                     self.status = format!("open editor: {e}");
                 }
             }

@@ -1,33 +1,34 @@
 //! The CLAP plugin editor.
 //!
 //! Most plugins use **embedded** mode: the host supplies a parent window and
-//! the plugin adds its view into it. We prefer embedded (parenting into the
-//! host window via its raw window handle) and fall back to **floating** (the
-//! plugin opens its own window) when that's all the plugin offers.
+//! the plugin adds its view into it. We give the plugin a dedicated native
+//! window of its own ([`EditorWindow`]) so it doesn't overlap the egui
+//! controls, and fall back to **floating** (the plugin opens its own window)
+//! when embedded isn't supported.
 //!
-//! For now the editor is parented into the host window without precise
-//! positioning — pinning it to the wrapper UI's reserved rect is a refinement
-//! (T20). Host-side GUI callbacks (resize/close) are T29.
+//! Host-side GUI callbacks (resize/close) are T29.
 
-use clack_extensions::gui::{GuiApiType, GuiConfiguration, PluginGui, Window as ClapWindow};
+use clack_extensions::gui::{GuiApiType, GuiConfiguration, GuiSize, PluginGui, Window as ClapWindow};
 use clack_host::prelude::*;
-use raw_window_handle::HasWindowHandle;
 
 use crate::clap::host::NexusHost;
 use crate::host::HostError;
 
+#[cfg(target_os = "macos")]
+use crate::clap::editor_window::EditorWindow;
+
 /// A plugin's open editor.
 pub struct ClapEditor {
     gui: PluginGui,
+    /// The window we created for an embedded editor (none in floating mode).
+    #[cfg(target_os = "macos")]
+    window: Option<EditorWindow>,
 }
 
 impl ClapEditor {
-    /// Create and show the plugin's editor, parented into `parent` if the
-    /// plugin supports embedded mode, otherwise as a floating window.
-    pub fn open(
-        instance: &mut PluginInstance<NexusHost>,
-        parent: &dyn HasWindowHandle,
-    ) -> Result<Self, HostError> {
+    /// Create and show the plugin's editor. Embedded plugins get a dedicated
+    /// host window; floating plugins open their own.
+    pub fn open(instance: &mut PluginInstance<NexusHost>) -> Result<Self, HostError> {
         let mut handle = instance.plugin_handle();
 
         let gui = handle
@@ -51,29 +52,58 @@ impl ClapEditor {
 
         if config.is_floating {
             gui.suggest_title(&mut handle, c"Nexus");
-        } else {
-            let window_handle = parent
-                .window_handle()
-                .map_err(|e| HostError::Load(format!("host window handle: {e}")))?;
-            let clap_window = ClapWindow::from_window_handle(window_handle.as_raw())
-                .ok_or_else(|| HostError::Load("unsupported window handle for plugin GUI".into()))?;
-            // SAFETY: the parent window (owned by the app / DAW) outlives the
-            // editor — we destroy the editor before the window goes away.
-            unsafe {
-                gui.set_parent(&mut handle, clap_window)
-                    .map_err(|e| HostError::Load(format!("gui set_parent: {e}")))?;
-            }
+            gui.show(&mut handle)
+                .map_err(|e| HostError::Load(format!("gui show: {e}")))?;
+            return Ok(Self {
+                gui,
+                #[cfg(target_os = "macos")]
+                window: None,
+            });
         }
 
-        gui.show(&mut handle)
-            .map_err(|e| HostError::Load(format!("gui show: {e}")))?;
-
-        Ok(Self { gui })
+        // Embedded: open our own window and parent the plugin into it.
+        let size = gui.get_size(&mut handle).unwrap_or(GuiSize { width: 800, height: 600 });
+        Self::open_embedded(gui, &mut handle, size)
     }
 
-    /// Destroy the editor.
+    #[cfg(target_os = "macos")]
+    fn open_embedded(
+        gui: PluginGui,
+        handle: &mut PluginMainThreadHandle,
+        size: GuiSize,
+    ) -> Result<Self, HostError> {
+        let window = EditorWindow::open(size.width as f64, size.height as f64, "Nexus — Plugin")
+            .ok_or_else(|| HostError::Load("could not create editor window".into()))?;
+
+        let clap_window = ClapWindow::from_cocoa_nsview(window.content_view_ptr());
+        // SAFETY: the window outlives the editor — we destroy the editor (and
+        // close the window) together.
+        unsafe {
+            gui.set_parent(handle, clap_window)
+                .map_err(|e| HostError::Load(format!("gui set_parent: {e}")))?;
+        }
+        gui.show(handle)
+            .map_err(|e| HostError::Load(format!("gui show: {e}")))?;
+
+        Ok(Self { gui, window: Some(window) })
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn open_embedded(
+        _gui: PluginGui,
+        _handle: &mut PluginMainThreadHandle,
+        _size: GuiSize,
+    ) -> Result<Self, HostError> {
+        Err(HostError::Load("embedded plugin editors are only supported on macOS".into()))
+    }
+
+    /// Destroy the editor and close its window.
     pub fn destroy(self, instance: &mut PluginInstance<NexusHost>) {
         let mut handle = instance.plugin_handle();
         self.gui.destroy(&mut handle);
+        #[cfg(target_os = "macos")]
+        if let Some(window) = self.window {
+            window.close();
+        }
     }
 }

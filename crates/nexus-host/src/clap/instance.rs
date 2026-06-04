@@ -122,14 +122,11 @@ impl HostPluginInstance for ClapPluginInstance {
         crate::clap::info::voice_info(&mut self.instance)
     }
 
-    fn open_editor(
-        &mut self,
-        parent: &dyn raw_window_handle::HasWindowHandle,
-    ) -> Result<(), HostError> {
+    fn open_editor(&mut self) -> Result<(), HostError> {
         if self.editor.is_some() {
             return Ok(());
         }
-        self.editor = Some(ClapEditor::open(&mut self.instance, parent)?);
+        self.editor = Some(ClapEditor::open(&mut self.instance)?);
         Ok(())
     }
 

@@ -27,6 +27,12 @@ crossbeam-channel = "0.5"
 # version clack (raw_window_handle_06) and eframe use.
 raw-window-handle = "0.6"
 
+# macOS native window for the plugin editor (objc2 / AppKit). Versions match
+# what cpal/winit already pull into the tree.
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
+
 # egui for the optional wrapper UI (`ui` feature). The app brings `eframe`.
 # Pinned to 0.31 — newer egui (0.34) requires rustc 1.92; we target 1.90.
 egui = "0.31"
