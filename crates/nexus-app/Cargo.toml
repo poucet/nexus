@@ -17,6 +17,7 @@ cpal.workspace = true
 midir.workspace = true
 rtrb.workspace = true
 rfd.workspace = true
+raw-window-handle.workspace = true
 crossbeam-channel.workspace = true
 log.workspace = true
 env_logger.workspace = true

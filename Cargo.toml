@@ -21,8 +21,11 @@ log = "0.4"
 
 # CLAP hosting via clack (tracks the main branch, like droplets).
 clack-host = { git = "https://github.com/prokopyl/clack.git" }
-clack-extensions = { git = "https://github.com/prokopyl/clack.git", features = ["clack-host", "all-extensions"] }
+clack-extensions = { git = "https://github.com/prokopyl/clack.git", features = ["clack-host", "all-extensions", "raw-window-handle_06"] }
 crossbeam-channel = "0.5"
+# Editor embedding: parent a plugin's view into a host window. Matches the
+# version clack (raw_window_handle_06) and eframe use.
+raw-window-handle = "0.6"
 
 # egui for the optional wrapper UI (`ui` feature). The app brings `eframe`.
 # Pinned to 0.31 — newer egui (0.34) requires rustc 1.92; we target 1.90.

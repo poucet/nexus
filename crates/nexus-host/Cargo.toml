@@ -18,6 +18,7 @@ base64.workspace = true
 clack-host.workspace = true
 clack-extensions.workspace = true
 crossbeam-channel.workspace = true
+raw-window-handle.workspace = true
 egui = { workspace = true, optional = true }
 
 [features]

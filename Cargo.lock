@@ -790,6 +790,7 @@ dependencies = [
  "clack-common",
  "clack-host",
  "clap-sys",
+ "raw-window-handle",
 ]
 
 [[package]]
@@ -2355,6 +2356,7 @@ dependencies = [
  "log",
  "midir",
  "nexus-host",
+ "raw-window-handle",
  "rfd",
  "rtrb",
 ]
@@ -2377,6 +2379,7 @@ dependencies = [
  "crossbeam-channel",
  "egui",
  "log",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
