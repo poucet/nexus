@@ -11,6 +11,9 @@
 
 pub mod clap;
 pub mod discovery;
+/// A native window that hosts a plugin's editor view (shared by the CLAP and
+/// VST3 backends).
+pub mod editor_window;
 pub mod host;
 pub mod preset;
 pub mod process;

@@ -8,6 +8,7 @@
 //!
 //! State and editor (T30, T22) land in later tasks.
 
+pub mod editor;
 pub mod event_list;
 pub mod host_app;
 pub mod instance;

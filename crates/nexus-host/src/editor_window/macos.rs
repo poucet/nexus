@@ -1,31 +1,29 @@
-//! A dedicated macOS window to host a plugin's editor view.
-//!
-//! Plugins that only support *embedded* GUIs need a parent window. Rather than
-//! cram the plugin's view into the egui canvas (where it overlaps the
-//! controls), we create our own `NSWindow` and hand the plugin its content
-//! view. The window lives on the shared main run loop, so it gets events
-//! alongside the egui window.
+//! macOS editor window: a native `NSWindow` whose content view hosts the
+//! plugin editor, exposed to the backends as an `AppKit` [`RawWindowHandle`].
 
 use std::ffi::c_void;
+use std::ptr::NonNull;
 
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2_app_kit::{NSBackingStoreType, NSWindow, NSWindowStyleMask};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
-/// A native window whose content view hosts the plugin editor.
-pub struct EditorWindow {
+use super::EditorWindow;
+
+/// A native window whose content view hosts the plugin editor. The window is
+/// **not** user-resizable — its size tracks the plugin's view (see
+/// [`fit_to_plugin_view`](EditorWindow::fit_to_plugin_view)); plugins resize
+/// themselves through their own controls and the window follows.
+pub struct MacOsEditorWindow {
     window: Retained<NSWindow>,
 }
 
-impl EditorWindow {
-    /// Open a window of the given content size. The window is **not**
-    /// user-resizable — its size tracks the plugin's view (see
-    /// [`fit_to_plugin_view`](Self::fit_to_plugin_view)); plugins resize
-    /// themselves through their own controls and the window follows. Returns
-    /// `None` if not on the main thread.
-    pub fn open(width: f64, height: f64, title: &str) -> Option<Self> {
-        let mtm = MainThreadMarker::new()?;
+impl EditorWindow for MacOsEditorWindow {
+    fn open(width: f64, height: f64, title: &str) -> Self {
+        let mtm = MainThreadMarker::new()
+            .expect("editor windows must be opened on the main thread");
         let content_rect = NSRect::new(
             NSPoint::new(140.0, 140.0),
             NSSize::new(width.max(200.0), height.max(120.0)),
@@ -51,24 +49,16 @@ impl EditorWindow {
             window.makeKeyAndOrderFront(None);
         }
 
-        Some(Self { window })
+        Self { window }
     }
 
-    /// Pointer to the window's content `NSView`, for the plugin to parent into.
-    pub fn content_view_ptr(&self) -> *mut c_void {
-        match self.window.contentView() {
-            Some(view) => Retained::as_ptr(&view) as *mut c_void,
-            None => std::ptr::null_mut(),
-        }
+    fn content_handle(&self) -> Option<RawWindowHandle> {
+        let view = self.window.contentView()?;
+        let ptr = NonNull::new(Retained::as_ptr(&view) as *mut c_void)?;
+        Some(RawWindowHandle::AppKit(AppKitWindowHandle::new(ptr)))
     }
 
-    // (window size is driven only by `fit_to_plugin_view`, below)
-
-    /// Size the window to the plugin's view and pin that view to the bottom-left
-    /// so it's fully visible. Crucially this **never resizes the plugin's view**
-    /// — it only reads the view's size and moves the window/origin — so it can't
-    /// fight the plugin's own sizing (which caused a resize feedback loop).
-    pub fn fit_to_plugin_view(&self) {
+    fn fit_to_plugin_view(&self) {
         let Some(content) = self.window.contentView() else { return };
         let Some(view) = content.subviews().lastObject() else { return };
         let size = view.frame().size;
@@ -85,8 +75,7 @@ impl EditorWindow {
         }
     }
 
-    /// Close the window.
-    pub fn close(&self) {
+    fn close(&self) {
         self.window.close();
     }
 }

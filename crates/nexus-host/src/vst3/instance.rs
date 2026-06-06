@@ -22,6 +22,7 @@ use vst3_sdk::Steinberg::{
 use vst3_sdk::{ComPtr, ComWrapper, Interface};
 
 use crate::host::{AudioConfig, AudioProcessor, HostError, PluginInstance};
+use crate::vst3::editor::Vst3Editor;
 use crate::vst3::host_app::Vst3HostApp;
 use crate::vst3::module::Vst3Module;
 use crate::vst3::process::Vst3AudioProcessor;
@@ -29,6 +30,9 @@ use crate::vst3::state::HostStream;
 
 /// A loaded VST3 plugin (main-thread side).
 pub struct Vst3PluginInstance {
+    /// The plugin's editor, if open. Declared first so its view is released
+    /// before the component/controller it came from.
+    editor: Option<Vst3Editor>,
     component: ComPtr<IComponent>,
     processor: ComPtr<IAudioProcessor>,
     controller: Option<ComPtr<IEditController>>,
@@ -66,6 +70,7 @@ impl Vst3PluginInstance {
         let controller = unsafe { setup_controller(&module, &component, ctx.as_ptr()) };
 
         Ok(Self {
+            editor: None,
             component,
             processor,
             controller,
@@ -76,6 +81,7 @@ impl Vst3PluginInstance {
     }
 
     fn teardown(&mut self) {
+        self.close_editor();
         if self.active {
             unsafe { self.component.setActive(0) };
             self.active = false;
@@ -180,6 +186,30 @@ impl PluginInstance for Vst3PluginInstance {
 
     fn latency(&mut self) -> u32 {
         unsafe { self.processor.getLatencySamples() }
+    }
+
+    fn open_editor(&mut self) -> Result<(), HostError> {
+        if self.editor.is_some() {
+            return Ok(());
+        }
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| HostError::Load("plugin has no edit controller".into()))?;
+        self.editor = Some(Vst3Editor::open(controller, "Nexus — Plugin")?);
+        Ok(())
+    }
+
+    fn close_editor(&mut self) {
+        if let Some(editor) = self.editor.take() {
+            editor.close();
+        }
+    }
+
+    fn pump(&mut self) {
+        if let Some(editor) = &self.editor {
+            editor.fit();
+        }
     }
 
     fn save_state(&mut self) -> Result<Vec<u8>, HostError> {
