@@ -199,7 +199,7 @@ impl Host {
     }
 
     /// Load `plugin` into a runnable [`PluginInstance`], dispatching to the
-    /// format-specific backend. (VST3 is deferred until the CLAP slice is done.)
+    /// format-specific backend.
     pub fn load(
         &self,
         plugin: &crate::PluginRef,
@@ -212,7 +212,13 @@ impl Host {
                 )?;
                 Ok(Box::new(instance))
             }
-            PluginFormat::Vst3 => Err(HostError::NotImplemented(PluginFormat::Vst3)),
+            PluginFormat::Vst3 => {
+                let instance = crate::vst3::instance::Vst3PluginInstance::load(
+                    &plugin.path,
+                    &plugin.descriptor.id,
+                )?;
+                Ok(Box::new(instance))
+            }
         }
     }
 }
@@ -242,13 +248,10 @@ mod tests {
     }
 
     #[test]
-    fn loading_vst3_is_not_implemented_yet() {
+    fn loading_a_missing_vst3_bundle_errors() {
         let host = Host::new();
-        let plugin = fake_plugin(PluginFormat::Vst3, "/tmp/x.vst3");
-        assert!(matches!(
-            host.load(&plugin),
-            Err(HostError::NotImplemented(PluginFormat::Vst3))
-        ));
+        let plugin = fake_plugin(PluginFormat::Vst3, "/no/such/nexus.vst3");
+        assert!(matches!(host.load(&plugin), Err(HostError::Load(_))));
     }
 
     #[test]

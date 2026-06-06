@@ -1,0 +1,79 @@
+//! Headless end-to-end check of VST3 hosting: load a real synth, feed it a
+//! note, and confirm it renders non-silent audio through the full
+//! instantiate → activate → process path. Ignored by default (machine-specific).
+//!
+//!   cargo test -p nexus-host --test vst3_render -- --ignored --nocapture
+
+use std::path::PathBuf;
+
+use nexus_host::process::{AudioBuffer, Event, EventBuffer, ProcessBlock};
+use nexus_host::{AudioConfig, Host, PluginCatalog, PluginFormat};
+
+/// Find an installed VST3 instrument we can drive. Prefers known synths.
+fn pick_synth(catalog: &PluginCatalog) -> Option<nexus_host::PluginRef> {
+    const PREFERRED: &[&str] = &["Surge XT", "Vital", "Pigments", "OB-Xd", "TAL-NoiseMaker"];
+    let vst3: Vec<_> = catalog
+        .plugins()
+        .iter()
+        .filter(|p| p.format == PluginFormat::Vst3)
+        .filter(|p| !p.display_name().contains("Effects") && !p.display_name().contains("FX"))
+        .collect();
+    // Exact name first (so "Surge XT" wins over "Surge XT Effects"), then prefix.
+    for name in PREFERRED {
+        if let Some(p) = vst3.iter().find(|p| p.display_name() == *name) {
+            return Some((*p).clone());
+        }
+    }
+    for name in PREFERRED {
+        if let Some(p) = vst3.iter().find(|p| p.display_name().contains(name)) {
+            return Some((*p).clone());
+        }
+    }
+    None
+}
+
+#[test]
+#[ignore = "loads a real VST3 synth; machine-specific"]
+fn renders_audio_from_a_vst3_synth() {
+    // Probe the user VST3 dir for Surge XT regardless of cache.
+    let _ = PathBuf::new();
+    let catalog = PluginCatalog::scan();
+    let Some(plugin) = pick_synth(&catalog) else {
+        eprintln!("no known VST3 synth installed; skipping");
+        return;
+    };
+    println!("loading {} ({})", plugin.display_name(), plugin.descriptor.id);
+
+    let host = Host::new();
+    let mut instance = host.load(&plugin).expect("load");
+    let max = 512;
+    let mut processor = instance
+        .activate(AudioConfig { sample_rate: 48_000.0, max_block_frames: max })
+        .expect("activate");
+    processor.start_processing().expect("start");
+
+    let input = AudioBuffer::empty();
+    let mut output = AudioBuffer::new(2, max);
+    let mut peak = 0.0f32;
+    for blk in 0..40 {
+        output.clear();
+        let mut events = EventBuffer::with_capacity(4);
+        if blk == 0 {
+            events.push(0, Event::note_on(0, 69, 1.0));
+        }
+        let mut block =
+            ProcessBlock { frames: max, input: &input, output: &mut output, events: &events };
+        processor.process(&mut block);
+        for ch in 0..output.channel_count() {
+            for &s in output.channel(ch).unwrap() {
+                peak = peak.max(s.abs());
+            }
+        }
+    }
+    processor.stop_processing();
+    drop(processor);
+    instance.deactivate();
+
+    println!("{} peak output over 40 blocks: {peak}", plugin.display_name());
+    assert!(peak > 0.0, "synth produced silence");
+}

@@ -2,6 +2,7 @@
 
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use libloading::{Library, Symbol};
 use vst3_sdk::ComPtr;
@@ -11,10 +12,13 @@ use crate::host::HostError;
 
 /// A loaded VST3 module: owns the dynamic library and its plugin factory.
 pub struct Vst3Module {
-    /// The plugin factory. Declared *before* `_library` so it is released
-    /// before the library (which holds its code) is unloaded.
+    /// The plugin factory. Declared *before* `library` so it is released before
+    /// the library (which holds its code) drops.
     pub factory: ComPtr<IPluginFactory>,
-    _library: Library,
+    /// The dynamic library, shared (`Arc`) so the audio processor can pin it
+    /// loaded for as long as it lives — a released COM object must never call
+    /// into an unloaded dylib.
+    library: Arc<Library>,
 }
 
 impl Vst3Module {
@@ -52,7 +56,14 @@ impl Vst3Module {
         let factory = unsafe { ComPtr::from_raw(raw) }
             .ok_or_else(|| HostError::Load("VST3 returned a null plugin factory".into()))?;
 
-        Ok(Self { factory, _library: library })
+        Ok(Self { factory, library: Arc::new(library) })
+    }
+
+    /// A handle that keeps the underlying dylib loaded. Hand a clone to anything
+    /// (e.g. the audio processor) that outlives the [`Vst3Module`] but still
+    /// holds COM objects from it.
+    pub fn library(&self) -> Arc<Library> {
+        self.library.clone()
     }
 }
 
