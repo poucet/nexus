@@ -30,10 +30,22 @@ impl AppMenu {
         // App menu (shows the app name + standard items on macOS).
         let app = Submenu::new("Nexus", true);
         let _ = app.append(&PredefinedMenuItem::about(Some("Nexus"), None));
+
+        // Load and save
+        let load = MenuItem::new("Load…", true, None);
+        let _ = app.append(&load);
+        actions.insert(load.id().clone(), MenuAction::LoadPreset);
+        let save = MenuItem::new("Save…", true, None);
+        actions.insert(save.id().clone(), MenuAction::SavePreset);
+        let _ = app.append(&save);
+        let _ = app.append(&PredefinedMenuItem::separator());
+
+        // Settings
         let settings = MenuItem::new("Settings…", true, None);
         actions.insert(settings.id().clone(), MenuAction::OpenSettings);
         let _ = app.append(&settings);
         let _ = app.append(&PredefinedMenuItem::separator());
+        // Quit
         let _ = app.append(&PredefinedMenuItem::quit(None));
         let _ = menu.append(&app);
 
@@ -46,16 +58,6 @@ impl AppMenu {
             let _ = plugin_menu.append(&item);
         }
         let _ = menu.append(&plugin_menu);
-
-        // State ▸ save / load
-        let state = Submenu::new("State", true);
-        let save = MenuItem::new("Save State…", true, None);
-        actions.insert(save.id().clone(), MenuAction::SavePreset);
-        let _ = state.append(&save);
-        let load = MenuItem::new("Load State…", true, None);
-        actions.insert(load.id().clone(), MenuAction::LoadPreset);
-        let _ = state.append(&load);
-        let _ = menu.append(&state);
 
         #[cfg(target_os = "macos")]
         menu.init_for_nsapp();
