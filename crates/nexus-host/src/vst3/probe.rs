@@ -5,7 +5,7 @@ use std::path::Path;
 use vst3_sdk::Steinberg::{IPluginFactoryTrait, PClassInfo, PFactoryInfo, TUID, kResultOk};
 
 use crate::host::{HostError, PluginDescriptor};
-use crate::vst3::module::Vst3Module;
+use crate::vst3::module::Vst3Factory;
 
 /// VST3 category for audio effect / instrument classes.
 const AUDIO_MODULE_CLASS: &str = "Audio Module Class";
@@ -13,7 +13,9 @@ const AUDIO_MODULE_CLASS: &str = "Audio Module Class";
 /// Read the audio-plugin descriptors a `.vst3` bundle exposes, without
 /// instantiating anything. The plugin id is the class UID (hex-encoded).
 pub fn probe(bundle: &Path) -> Result<Vec<PluginDescriptor>, HostError> {
-    let factory = Vst3Module::probe(bundle)?;
+    // Keep the loaded module alive for as long as we read its factory.
+    let module = Vst3Factory::load(bundle)?;
+    let factory = module.factory();
 
     // Vendor is factory-wide.
     let vendor = unsafe {

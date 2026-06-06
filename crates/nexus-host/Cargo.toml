@@ -20,15 +20,14 @@ clack-extensions.workspace = true
 crossbeam-channel.workspace = true
 raw-window-handle.workspace = true
 # VST3 hosting: pure-Rust COM bindings (renamed to avoid clashing with our
-# `vst3` module) + dynamic loading of the plugin bundle binary.
+# `vst3` module). Per-OS module loading lives in vst3/module/ (macOS uses
+# CFBundle, so no cross-platform loader crate is pulled in here).
 vst3-sdk = { version = "0.3", package = "vst3" }
-libloading = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
 objc2-app-kit.workspace = true
-# NSBundle: a real CFBundle (toll-free bridged) for VST3 macOS module loading.
-objc2-foundation = { workspace = true, features = ["NSBundle"] }
+objc2-foundation.workspace = true
 egui = { workspace = true, optional = true }
 
 [features]

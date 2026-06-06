@@ -1,117 +1,150 @@
-//! macOS VST3 loading: dlopen the bundle binary for its entry points, and pass
-//! the plugin a **real `CFBundle`** (via toll-free-bridged `NSBundle`) so it can
-//! locate its resources — no null `bundleEntry` shortcut.
+//! macOS VST3 loading via **`CFBundle`** — the canonical Steinberg approach.
+//!
+//! `CFBundleCreate` on the `.vst3` directory, `CFBundleLoadExecutable` to map
+//! the binary (which also resolves the executable name for us), then the
+//! standard entry points via `CFBundleGetFunctionPointerForName`. For hosting we
+//! hand the plugin that same real `CFBundleRef` in `bundleEntry` so it can find
+//! its resources. (Passing an `NSBundle` here crashes the plugin — NSBundle is
+//! **not** toll-free bridged to CFBundle.)
 
 use std::ffi::c_void;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::ptr;
 use std::sync::Arc;
 
-use libloading::{Library, Symbol};
 use objc2::rc::Retained;
-use objc2_foundation::{NSBundle, NSString};
+use objc2_foundation::NSString;
 use vst3_sdk::ComPtr;
 use vst3_sdk::Steinberg::IPluginFactory;
 
 use super::LoadedModule;
 use crate::host::HostError;
 
-/// Result of loading: a keep-alive handle plus the plugin factory.
-type Loaded = (Arc<dyn LoadedModule>, ComPtr<IPluginFactory>);
+/// An untyped CoreFoundation reference (`CFBundleRef`, `CFURLRef`, …).
+type CFTypeRef = *const c_void;
 
-/// Keeps the dylib loaded and the resource bundle alive for the plugin's life,
-/// and runs `bundleExit` on teardown.
-struct MacModule {
-    /// The plugin's resource bundle, kept alive (the plugin holds the same ref);
-    /// never read by us.
-    _bundle: Option<Retained<NSBundle>>,
-    /// Keeps the dylib loaded; never read.
-    _library: Library,
+/// `kCFURLPOSIXPathStyle`.
+const POSIX_PATH_STYLE: isize = 0;
+
+#[link(name = "CoreFoundation", kind = "framework")]
+unsafe extern "C" {
+    fn CFBundleCreate(allocator: CFTypeRef, bundle_url: CFTypeRef) -> CFTypeRef;
+    fn CFBundleLoadExecutable(bundle: CFTypeRef) -> u8;
+    fn CFBundleUnloadExecutable(bundle: CFTypeRef);
+    fn CFBundleGetFunctionPointerForName(bundle: CFTypeRef, name: CFTypeRef) -> *mut c_void;
+    fn CFURLCreateWithFileSystemPath(
+        allocator: CFTypeRef,
+        path: CFTypeRef,
+        style: isize,
+        is_directory: u8,
+    ) -> CFTypeRef;
+    fn CFRelease(cf: CFTypeRef);
 }
 
-// SAFETY: this handle only pins the loaded code + resource bundle; it is never
-// used to call into the plugin, and never from more than the audio thread that
-// owns the processor holding it.
+/// Owns the plugin's `CFBundle`, keeping its executable mapped for the lifetime
+/// of any COM object obtained from it.
+struct MacModule {
+    bundle: CFTypeRef,
+}
+
+// SAFETY: a CFBundle is safe to retain/release/unload from any thread; this
+// handle only pins it and never calls into the plugin.
 unsafe impl Send for MacModule {}
 unsafe impl Sync for MacModule {}
 
 impl LoadedModule for MacModule {}
 
-/// Load just to read the factory — no module init (`bundleEntry`).
-pub fn probe(path: &Path) -> Result< ComPtr<IPluginFactory>, HostError> {
-    let (binary, library) = open(path)?;
-    let factory = factory(&library, &binary)?;
-    Ok(factory)
+impl Drop for MacModule {
+    fn drop(&mut self) {
+        // SAFETY: `bundle` came from CFBundleCreate (+1) and is still valid.
+        unsafe {
+            CFBundleUnloadExecutable(self.bundle);
+            CFRelease(self.bundle);
+        }
+    }
 }
 
-/// Load and run the module init entry with a real resource bundle.
-pub fn host(path: &Path) -> Result<Loaded, HostError> {
-    let (binary, library) = open(path)?;
+/// Load just to read the factory — no module init (`bundleEntry`).
+pub fn probe(path: &Path) -> Result<(Box<dyn LoadedModule>, ComPtr<IPluginFactory>), HostError> {
+    let (module, factory) = load(path, false)?;
+    Ok((Box::new(module), factory))
+}
 
-    // A real CFBundle for the plugin's resources, via toll-free-bridged NSBundle.
-    let bundle = path.to_str().and_then(|p| NSBundle::bundleWithPath(&NSString::from_str(p)));
-    // SAFETY: bundleEntry is the macOS VST3 init entry; it takes the plugin's
-    // CFBundleRef (NSBundle is toll-free bridged to CFBundle).
-    unsafe {
-        if let Ok(entry) =
-            library.get::<unsafe extern "C" fn(*mut c_void) -> bool>(b"bundleEntry\0")
-        {
-            let cf =
-                bundle.as_ref().map_or(ptr::null_mut(), |b| Retained::as_ptr(b) as *mut c_void);
-            entry(cf);
+/// Load and run the module init entry, handing the plugin its real `CFBundle`.
+pub fn host(path: &Path) -> Result<(Arc<dyn LoadedModule>, ComPtr<IPluginFactory>), HostError> {
+    let (module, factory) = load(path, true)?;
+    Ok((Arc::new(module), factory))
+}
+
+/// Create a `CFBundle` for the `.vst3` directory, map its executable, optionally
+/// run `bundleEntry` with that bundle, and read `GetPluginFactory`.
+fn load(path: &Path, run_entry: bool) -> Result<(MacModule, ComPtr<IPluginFactory>), HostError> {
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| HostError::Load(format!("{}: non-UTF-8 path", path.display())))?;
+    let ns_path = NSString::from_str(path_str);
+
+    // CFURL for the bundle directory, then the bundle itself. NSString *is*
+    // toll-free bridged to CFString, so its pointer is a valid CFStringRef.
+    // SAFETY: CoreFoundation calls with valid arguments; the URL is released
+    // once the bundle is created.
+    let bundle = unsafe {
+        let url = CFURLCreateWithFileSystemPath(
+            ptr::null(),
+            Retained::as_ptr(&ns_path) as CFTypeRef,
+            POSIX_PATH_STYLE,
+            1,
+        );
+        if url.is_null() {
+            return Err(HostError::Load(format!("{}: could not form bundle URL", path.display())));
+        }
+        let bundle = CFBundleCreate(ptr::null(), url);
+        CFRelease(url);
+        bundle
+    };
+    if bundle.is_null() {
+        return Err(HostError::Load(format!("{}: CFBundleCreate failed", path.display())));
+    }
+    // From here, `module` releases the bundle on any early return.
+    let module = MacModule { bundle };
+
+    // SAFETY: `bundle` is a valid CFBundleRef.
+    if unsafe { CFBundleLoadExecutable(bundle) } == 0 {
+        return Err(HostError::Load(format!("{}: could not load executable", path.display())));
+    }
+
+    if run_entry {
+        // SAFETY: bundleEntry(CFBundleRef) -> bool is the macOS VST3 init entry;
+        // we hand the plugin its own valid CFBundle.
+        unsafe {
+            let entry = function_ptr(bundle, "bundleEntry");
+            if !entry.is_null() {
+                let entry: unsafe extern "C" fn(CFTypeRef) -> bool = std::mem::transmute(entry);
+                entry(bundle);
+            }
         }
     }
 
-    let factory = factory(&library, &binary)?;
-    Ok((Arc::new(MacModule { _bundle: bundle, _library: library }), factory))
-}
-
-/// Resolve and dlopen the bundle binary.
-fn open(path: &Path) -> Result<(PathBuf, Library), HostError> {
-    let binary = binary_path(path).ok_or_else(|| {
-        HostError::Load(format!("{}: unrecognized VST3 bundle layout", path.display()))
-    })?;
-    // SAFETY: loads a shared library; `binary` comes from scanning the standard
-    // plugin directories.
-    let library = unsafe { Library::new(&binary) }
-        .map_err(|e| HostError::Load(format!("{}: {e}", binary.display())))?;
-    Ok((binary, library))
-}
-
-/// Call the standard `GetPluginFactory` entry point.
-fn factory(library: &Library, binary: &Path) -> Result<ComPtr<IPluginFactory>, HostError> {
-    // SAFETY: GetPluginFactory is the standard VST3 entry point.
+    // SAFETY: GetPluginFactory() -> *mut IPluginFactory is the standard entry.
     let raw = unsafe {
-        let get: Symbol<unsafe extern "C" fn() -> *mut IPluginFactory> = library
-            .get(b"GetPluginFactory\0")
-            .map_err(|e| HostError::Load(format!("{}: no GetPluginFactory ({e})", binary.display())))?;
+        let get = function_ptr(bundle, "GetPluginFactory");
+        if get.is_null() {
+            return Err(HostError::Load(format!("{}: no GetPluginFactory", path.display())));
+        }
+        let get: unsafe extern "C" fn() -> *mut IPluginFactory = std::mem::transmute(get);
         get()
     };
-    unsafe { ComPtr::from_raw(raw) }
-        .ok_or_else(|| HostError::Load("VST3 returned a null plugin factory".into()))
+    let factory = unsafe { ComPtr::from_raw(raw) }
+        .ok_or_else(|| HostError::Load("VST3 returned a null plugin factory".into()))?;
+
+    Ok((module, factory))
 }
 
-/// The bundle binary, in `<bundle>.vst3/Contents/MacOS/`.
+/// `CFBundleGetFunctionPointerForName(bundle, name)`.
 ///
-/// Usually named after the bundle (`Foo.vst3` → `Foo`), but not always
-/// (`VCV Rack 2.vst3` → `plugin.dylib`). Prefer the bundle-name match, then fall
-/// back to the sole file in `Contents/MacOS`. (The canonical source is
-/// `CFBundleExecutable` in `Info.plist`; this avoids parsing it.)
-pub fn binary_path(bundle: &Path) -> Option<PathBuf> {
-    let macos = bundle.join("Contents").join("MacOS");
-
-    if let Some(name) = bundle.file_stem().and_then(|s| s.to_str()) {
-        let candidate = macos.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-
-    let mut files = std::fs::read_dir(&macos)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file());
-    let first = files.next()?;
-    files.next().is_none().then_some(first)
+/// # Safety
+/// `bundle` must be a valid `CFBundleRef` with its executable loaded.
+unsafe fn function_ptr(bundle: CFTypeRef, name: &str) -> *mut c_void {
+    let name = NSString::from_str(name);
+    unsafe { CFBundleGetFunctionPointerForName(bundle, Retained::as_ptr(&name) as CFTypeRef) }
 }
