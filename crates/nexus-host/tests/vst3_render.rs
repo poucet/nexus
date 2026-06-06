@@ -101,3 +101,26 @@ fn vst3_state_round_trips() {
     assert_eq!(s1, s2, "VST3 state did not round-trip byte-for-byte");
     println!("VST3 state round-trips byte-for-byte ({} bytes)", s1.len());
 }
+
+#[test]
+#[ignore = "loads a real VST3 plugin; machine-specific"]
+fn vst3_enumerates_parameters() {
+    let catalog = PluginCatalog::scan();
+    let Some(plugin) = pick_synth(&catalog) else {
+        eprintln!("no known VST3 synth installed; skipping");
+        return;
+    };
+    let host = Host::new();
+    let mut instance = host.load(&plugin).expect("load");
+    let params = instance.params();
+    println!("{}: {} parameters", plugin.display_name(), params.len());
+    for p in params.iter().take(6) {
+        let val = instance.param_value(p.id);
+        let text = val.and_then(|v| instance.param_value_to_text(p.id, v));
+        println!(
+            "  #{:<6} {:<28} [{:.2}..{:.2}] = {:?} ({:?})",
+            p.id, p.name, p.min_value, p.max_value, val, text
+        );
+    }
+    assert!(!params.is_empty(), "expected the synth to expose parameters");
+}

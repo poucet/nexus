@@ -166,6 +166,18 @@ impl PluginInstance for Vst3PluginInstance {
         }
     }
 
+    fn params(&mut self) -> Vec<crate::host::ParamInfo> {
+        self.controller.as_ref().map(crate::vst3::params::enumerate).unwrap_or_default()
+    }
+
+    fn param_value(&mut self, id: u32) -> Option<f64> {
+        self.controller.as_ref().and_then(|c| crate::vst3::params::value(c, id))
+    }
+
+    fn param_value_to_text(&mut self, id: u32, value: f64) -> Option<String> {
+        self.controller.as_ref().and_then(|c| crate::vst3::params::value_to_text(c, id, value))
+    }
+
     fn latency(&mut self) -> u32 {
         unsafe { self.processor.getLatencySamples() }
     }
