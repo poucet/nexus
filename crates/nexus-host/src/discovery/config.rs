@@ -28,6 +28,8 @@ use crate::PluginFormat;
 pub struct Config {
     #[serde(default)]
     plugins: PluginDirs,
+    #[serde(default)]
+    presets: PresetSettings,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -38,6 +40,13 @@ struct PluginDirs {
     vst3: Vec<PathBuf>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct PresetSettings {
+    /// Where presets are saved/loaded. Defaults to `~/Music/Nexus`.
+    #[serde(default)]
+    directory: Option<PathBuf>,
+}
+
 impl Config {
     /// Extra search directories for `format`, in the order the user listed them.
     pub fn custom_dirs(&self, format: PluginFormat) -> &[PathBuf] {
@@ -45,6 +54,19 @@ impl Config {
             PluginFormat::Clap => &self.plugins.clap,
             PluginFormat::Vst3 => &self.plugins.vst3,
         }
+    }
+}
+
+/// The directory presets are saved to / loaded from: the configured
+/// `[presets].directory` (with `~` expansion) or, by default, `~/Music/Nexus`.
+pub fn preset_directory() -> PathBuf {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    match load().presets.directory {
+        Some(dir) => expand_tilde(&dir, home.as_deref()),
+        None => match home {
+            Some(home) => home.join("Music").join("Nexus"),
+            None => PathBuf::from("Nexus"),
+        },
     }
 }
 

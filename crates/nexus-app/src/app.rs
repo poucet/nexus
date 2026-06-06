@@ -151,8 +151,11 @@ impl NexusApp {
                 return;
             }
         };
+        let dir = nexus_host::discovery::config::preset_directory();
+        let _ = std::fs::create_dir_all(&dir);
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("Nexus preset", &["nexuspreset"])
+            .set_directory(&dir)
             .set_file_name("preset.nexuspreset")
             .save_file()
         {
@@ -164,8 +167,11 @@ impl NexusApp {
     }
 
     fn load_preset(&mut self) {
+        let dir = nexus_host::discovery::config::preset_directory();
+        let _ = std::fs::create_dir_all(&dir);
         let Some(path) = rfd::FileDialog::new()
             .add_filter("Nexus preset", &["nexuspreset"])
+            .set_directory(&dir)
             .pick_file()
         else {
             return;
