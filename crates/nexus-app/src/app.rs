@@ -1,26 +1,29 @@
-//! The eframe application: the wrapper UI on top, device status, and the wiring
-//! that loads plugins into the realtime engine.
+//! The eframe application. The native menu bar drives loading plugins and
+//! saving/loading state; device selection lives in a Settings dialog. The main
+//! window keeps the virtual keyboard, status, and (eventually) the plugin-state
+//! explorer.
 
 use eframe::egui;
 use nexus_host::host::PluginDescriptor;
-use nexus_host::ui::WrapperUi;
 use nexus_host::{AudioConfig, Host, PluginCatalog, PluginInstance, PluginRef, Preset};
 
 use crate::engine::{self, Engine};
 use crate::keyboard::{KeyEvent, VirtualKeyboard};
+use crate::menu::{AppMenu, MenuAction};
 
 pub struct NexusApp {
     host: Host,
-    catalog: PluginCatalog,
-    wrapper: WrapperUi,
+    menu: AppMenu,
     keyboard: VirtualKeyboard,
     engine: Option<Engine>,
     /// Available audio output devices, and the selected one.
     devices: Vec<String>,
     selected_device: Option<String>,
-    /// The currently-loaded plugin (main-thread side), kept for params/state.
+    /// Whether the Settings dialog is open.
+    settings_open: bool,
+    /// The currently-loaded plugin (main-thread side), kept for state/editor.
     instance: Option<Box<dyn PluginInstance>>,
-    /// Which catalog entry is loaded (for presets).
+    /// Which catalog entry is loaded (for presets / display).
     loaded: Option<PluginRef>,
     status: String,
 }
@@ -35,17 +38,13 @@ impl NexusApp {
         style.visuals.widgets.inactive.corner_radius = 4.into();
         cc.egui_ctx.set_style(style);
 
-        // Use the cached scan so we don't load/initialize every plugin binary
-        // on startup — only new or changed bundles get probed.
+        // Cached scan so we don't load/initialize every plugin binary on startup.
         let catalog = PluginCatalog::load_or_scan();
+        let menu = AppMenu::new(catalog.plugins());
+
         let (engine, status) = match Engine::start() {
             Ok(engine) => {
-                let status = format!(
-                    "Ready — {} plugins. Output: {}, MIDI: {}",
-                    catalog.len(),
-                    engine.output_device_name(),
-                    engine.midi_source_name().unwrap_or("none"),
-                );
+                let status = format!("Ready — {} plugins. Use the Plugin menu.", catalog.len());
                 (Some(engine), status)
             }
             Err(e) => (None, format!("Audio engine failed: {e}")),
@@ -54,12 +53,12 @@ impl NexusApp {
         let selected_device = engine.as_ref().map(|e| e.output_device_name().to_string());
         Self {
             host: Host::new(),
-            catalog,
-            wrapper: WrapperUi::new(),
+            menu,
             keyboard: VirtualKeyboard::new(),
             engine,
             devices: engine::output_devices(),
             selected_device,
+            settings_open: false,
             instance: None,
             loaded: None,
             status,
@@ -93,9 +92,8 @@ impl NexusApp {
     }
 
     /// Activate an instance against the engine, start playing it, and open its
-    /// editor (floating window).
+    /// editor (its own window).
     fn play(&mut self, mut instance: Box<dyn PluginInstance>, label: String) {
-        // Close the previous plugin's editor before swapping it out.
         if let Some(old) = self.instance.as_mut() {
             old.close_editor();
         }
@@ -117,13 +115,10 @@ impl NexusApp {
             None => self.status = "No audio engine — cannot play".into(),
         }
 
-        // Open the plugin's editor in its own window (no-op error if it has no
-        // GUI — plenty of plugins don't).
         if let Err(e) = instance.open_editor() {
             self.status = format!("{} (no editor: {e})", self.status);
         }
 
-        self.wrapper.set_loaded(Some(label));
         self.instance = Some(instance);
     }
 
@@ -139,7 +134,7 @@ impl NexusApp {
 
     fn save_preset(&mut self) {
         let Some(plugin) = self.loaded.clone() else {
-            self.status = "Load a plugin before saving a preset".into();
+            self.status = "Load a plugin before saving state".into();
             return;
         };
         let Some(instance) = self.instance.as_mut() else { return };
@@ -160,7 +155,7 @@ impl NexusApp {
             .save_file()
         {
             self.status = match preset.save_to_file(&path) {
-                Ok(()) => format!("Saved preset → {}", path.display()),
+                Ok(()) => format!("Saved state → {}", path.display()),
                 Err(e) => format!("save failed: {e}"),
             };
         }
@@ -179,7 +174,7 @@ impl NexusApp {
         let preset = match Preset::load_from_file(&path) {
             Ok(preset) => preset,
             Err(e) => {
-                self.status = format!("preset load failed: {e}");
+                self.status = format!("state load failed: {e}");
                 return;
             }
         };
@@ -200,42 +195,19 @@ impl NexusApp {
             Err(e) => self.status = format!("recall failed: {e}"),
         }
     }
-}
 
-impl eframe::App for NexusApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("nexus-status").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.strong("Nexus");
-                ui.separator();
-                ui.label(&self.status);
-            });
-        });
-
-        let mut device_change: Option<String> = None;
-        egui::TopBottomPanel::bottom("nexus-devices").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                match &self.engine {
-                    Some(engine) => {
-                        ui.label(format!(
-                            "{} Hz, {} ch",
-                            engine.sample_rate() as u32,
-                            engine.channels(),
-                        ));
-                        ui.separator();
-                        ui.label(format!(
-                            "MIDI in: {}",
-                            engine.midi_source_name().unwrap_or("none")
-                        ));
-                    }
-                    None => {
-                        ui.colored_label(egui::Color32::RED, "No audio engine");
-                    }
-                }
-                ui.separator();
-                ui.label("Output:");
+    /// The Settings dialog (device selection). Returns a device change request.
+    fn settings_dialog(&mut self, ctx: &egui::Context) -> Option<String> {
+        let mut device_change = None;
+        let mut open = self.settings_open;
+        egui::Window::new("Settings")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label("Audio output device");
                 let current = self.selected_device.clone().unwrap_or_else(|| "default".into());
-                egui::ComboBox::from_id_salt("nexus-output-device")
+                egui::ComboBox::from_id_salt("settings-output-device")
                     .selected_text(current)
                     .show_ui(ui, |ui| {
                         for name in &self.devices {
@@ -245,6 +217,46 @@ impl eframe::App for NexusApp {
                             }
                         }
                     });
+                ui.separator();
+                if let Some(engine) = &self.engine {
+                    ui.label(format!(
+                        "MIDI input: {}",
+                        engine.midi_source_name().unwrap_or("none")
+                    ));
+                    ui.label(format!("{} Hz, {} ch", engine.sample_rate() as u32, engine.channels()));
+                }
+                ui.label(format!(
+                    "Presets: {}",
+                    nexus_host::discovery::config::preset_directory().display()
+                ));
+            });
+        self.settings_open = open;
+        device_change
+    }
+}
+
+impl eframe::App for NexusApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let menu_actions = self.menu.poll();
+
+        egui::TopBottomPanel::top("nexus-status").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.strong("Nexus");
+                ui.separator();
+                ui.label(&self.status);
+            });
+        });
+
+        egui::TopBottomPanel::bottom("nexus-devices").show(ctx, |ui| {
+            ui.horizontal(|ui| match &self.engine {
+                Some(engine) => {
+                    ui.label(format!("Output: {}", engine.output_device_name()));
+                    ui.separator();
+                    ui.label(format!("MIDI: {}", engine.midi_source_name().unwrap_or("none")));
+                }
+                None => {
+                    ui.colored_label(egui::Color32::RED, "No audio engine");
+                }
             });
         });
 
@@ -252,13 +264,38 @@ impl eframe::App for NexusApp {
             .show(ctx, |ui| self.keyboard.show(ui))
             .inner;
 
-        let actions = egui::CentralPanel::default()
-            .show(ctx, |ui| self.wrapper.show(ui, &self.catalog))
-            .inner;
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.add_space(8.0);
+            match &self.loaded {
+                Some(plugin) => {
+                    ui.heading(plugin.display_name());
+                    ui.weak("Editor is open in its own window.");
+                }
+                None => {
+                    ui.heading("No plugin loaded");
+                    ui.weak("Use the Plugin menu to load one.");
+                }
+            }
+            ui.separator();
+            ui.add_space(8.0);
+            ui.weak("Plugin-state explorer will live here.");
+        });
 
-        // Act on this frame's requests (after all panels, to avoid overlapping
-        // borrows of `self`). `actions.editor_rect` is reserved for the native
-        // editor child window (T20–T22).
+        let device_change = if self.settings_open {
+            self.settings_dialog(ctx)
+        } else {
+            None
+        };
+
+        // Act on this frame's requests.
+        for action in menu_actions {
+            match action {
+                MenuAction::Load(plugin) => self.load_plugin(&plugin),
+                MenuAction::SavePreset => self.save_preset(),
+                MenuAction::LoadPreset => self.load_preset(),
+                MenuAction::OpenSettings => self.settings_open = true,
+            }
+        }
         if let Some(name) = device_change {
             self.set_output_device(name);
         }
@@ -270,22 +307,13 @@ impl eframe::App for NexusApp {
                 }
             }
         }
-        if let Some(plugin) = actions.load {
-            self.load_plugin(&plugin);
-        }
-        if actions.save_preset {
-            self.save_preset();
-        }
-        if actions.load_preset {
-            self.load_preset();
-        }
 
         // Drive the loaded plugin's main-thread work (its GUI).
         if let Some(instance) = self.instance.as_mut() {
             instance.pump();
         }
 
-        // Keep repainting so held computer keys / on-screen keys track releases.
+        // Keep repainting so held keys track releases.
         ctx.request_repaint();
     }
 }

@@ -4,6 +4,7 @@
 mod app;
 mod engine;
 mod keyboard;
+mod menu;
 
 use app::NexusApp;
 

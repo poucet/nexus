@@ -10,7 +10,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-nexus-host = { workspace = true, features = ["ui"] }
+nexus-host = { workspace = true }
 eframe.workspace = true
 egui.workspace = true
 cpal.workspace = true
@@ -18,6 +18,7 @@ midir.workspace = true
 rtrb.workspace = true
 rfd.workspace = true
 raw-window-handle.workspace = true
+muda.workspace = true
 crossbeam-channel.workspace = true
 log.workspace = true
 env_logger.workspace = true

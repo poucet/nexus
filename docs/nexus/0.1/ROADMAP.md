@@ -43,6 +43,8 @@ sequenced first because it unblocks the engine and UI plumbing that VST3 reuses.
 | [ ] | P2 | 12 | CLAP host long-tail extensions (surround/ambisonic, posix-fd, thread-pool, event-registry, param-indication, remote-controls, preset-load, context-menu) | M | Low–Medium — niche; stubbed in Phase 01, completed here |
 | [ ] | P1 | 13 | `nexus-wrap`: expose the host as a CLAP/VST3 plugin, **forwarding the full extension surface** to the inner plugin (VST3 via `clap-wrapper`) | XL | High — layer 2; consumes the same `PluginInstance` surface ([PLUGIN_EXTENSIONS.md](../../designs/PLUGIN_EXTENSIONS.md)) |
 | [ ] | P3 | 14 | DAW UI spike (web frontend over the engine; editors as floating windows) | L | High — informs the eventual `nexus-daw` UI choice |
+| [ ] | P2 | 16 | Native menu bar via **`muda`** (portable: macOS top-bar, Win/Linux): plugin list, presets, audio-output + MIDI-input device selection. Keeps eframe/egui. | M | Medium — Mac-native feel without losing portability |
+| [ ] | P2 | 17 | **Plugin-state explorer**: capture multiple state snapshots, diff their binary layout to map bytes ↔ parameters, working toward driving a plugin's state over **MCP** (AI control). The egui main window's purpose. | L | High — core to the AI-first goal; complements param-based control |
 
 ---
 
