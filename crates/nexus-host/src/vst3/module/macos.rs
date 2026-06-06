@@ -10,7 +10,6 @@
 use std::ffi::c_void;
 use std::path::Path;
 use std::ptr;
-use std::sync::Arc;
 
 use objc2::rc::Retained;
 use objc2_foundation::NSString;
@@ -52,7 +51,19 @@ struct MacModule {
 unsafe impl Send for MacModule {}
 unsafe impl Sync for MacModule {}
 
-impl LoadedModule for MacModule {}
+impl LoadedModule for MacModule {
+    fn init(&self) {
+        // SAFETY: bundleEntry(CFBundleRef) -> bool is the macOS VST3 init entry;
+        // we hand the plugin its own valid CFBundle so it can find its resources.
+        unsafe {
+            let entry = function_ptr(self.bundle, "bundleEntry");
+            if !entry.is_null() {
+                let entry: unsafe extern "C" fn(CFTypeRef) -> bool = std::mem::transmute(entry);
+                entry(self.bundle);
+            }
+        }
+    }
+}
 
 impl Drop for MacModule {
     fn drop(&mut self) {
@@ -64,21 +75,9 @@ impl Drop for MacModule {
     }
 }
 
-/// Load just to read the factory — no module init (`bundleEntry`).
-pub fn probe(path: &Path) -> Result<(Box<dyn LoadedModule>, ComPtr<IPluginFactory>), HostError> {
-    let (module, factory) = load(path, false)?;
-    Ok((Box::new(module), factory))
-}
-
-/// Load and run the module init entry, handing the plugin its real `CFBundle`.
-pub fn host(path: &Path) -> Result<(Arc<dyn LoadedModule>, ComPtr<IPluginFactory>), HostError> {
-    let (module, factory) = load(path, true)?;
-    Ok((Arc::new(module), factory))
-}
-
-/// Create a `CFBundle` for the `.vst3` directory, map its executable, optionally
-/// run `bundleEntry` with that bundle, and read `GetPluginFactory`.
-fn load(path: &Path, run_entry: bool) -> Result<(MacModule, ComPtr<IPluginFactory>), HostError> {
+/// Create a `CFBundle` for the `.vst3` directory, map its executable, and read
+/// `GetPluginFactory` — no module init (that's [`LoadedModule::init`]).
+pub fn load(path: &Path) -> Result<(Box<dyn LoadedModule>, ComPtr<IPluginFactory>), HostError> {
     let path_str = path
         .to_str()
         .ok_or_else(|| HostError::Load(format!("{}: non-UTF-8 path", path.display())))?;
@@ -113,18 +112,6 @@ fn load(path: &Path, run_entry: bool) -> Result<(MacModule, ComPtr<IPluginFactor
         return Err(HostError::Load(format!("{}: could not load executable", path.display())));
     }
 
-    if run_entry {
-        // SAFETY: bundleEntry(CFBundleRef) -> bool is the macOS VST3 init entry;
-        // we hand the plugin its own valid CFBundle.
-        unsafe {
-            let entry = function_ptr(bundle, "bundleEntry");
-            if !entry.is_null() {
-                let entry: unsafe extern "C" fn(CFTypeRef) -> bool = std::mem::transmute(entry);
-                entry(bundle);
-            }
-        }
-    }
-
     // SAFETY: GetPluginFactory() -> *mut IPluginFactory is the standard entry.
     let raw = unsafe {
         let get = function_ptr(bundle, "GetPluginFactory");
@@ -137,7 +124,7 @@ fn load(path: &Path, run_entry: bool) -> Result<(MacModule, ComPtr<IPluginFactor
     let factory = unsafe { ComPtr::from_raw(raw) }
         .ok_or_else(|| HostError::Load("VST3 returned a null plugin factory".into()))?;
 
-    Ok((module, factory))
+    Ok((Box::new(module), factory))
 }
 
 /// `CFBundleGetFunctionPointerForName(bundle, name)`.

@@ -6,9 +6,7 @@
 //! [`Vst3AudioProcessor`](crate::vst3::process::Vst3AudioProcessor) the engine
 //! drives on the realtime thread.
 
-use std::ffi::c_void;
 use std::path::Path;
-use std::ptr;
 
 use vst3_sdk::Steinberg::Vst::{
     BusDirection, BusDirections_, BusInfo, IAudioProcessor, IAudioProcessorTrait, IComponent,
@@ -16,15 +14,13 @@ use vst3_sdk::Steinberg::Vst::{
     MediaType, MediaTypes_, ProcessModes_, ProcessSetup, SpeakerArr, SpeakerArrangement,
     SymbolicSampleSizes_,
 };
-use vst3_sdk::Steinberg::{
-    FIDString, FUnknown, IBStream, IPluginBaseTrait, IPluginFactoryTrait, TUID, kResultOk,
-};
-use vst3_sdk::{ComPtr, ComWrapper, Interface};
+use vst3_sdk::Steinberg::{FUnknown, IBStream, IPluginBaseTrait, TUID, kResultOk};
+use vst3_sdk::{ComPtr, ComWrapper};
 
 use crate::host::{AudioConfig, AudioProcessor, HostError, PluginInstance};
 use crate::vst3::editor::Vst3Editor;
 use crate::vst3::host_app::Vst3HostApp;
-use crate::vst3::module::Vst3Module;
+use crate::vst3::module::{Vst3Factory, Vst3Module};
 use crate::vst3::process::Vst3AudioProcessor;
 use crate::vst3::state::HostStream;
 
@@ -48,7 +44,7 @@ impl Vst3PluginInstance {
     /// Load the `.vst3` bundle at `path` and instantiate the audio class whose
     /// hex-encoded class UID is `plugin_id` (as produced by the probe).
     pub fn load(path: &Path, plugin_id: &str) -> Result<Self, HostError> {
-        let module = Vst3Module::host(path)?;
+        let module = Vst3Factory::load(path)?.host();
         let cid = parse_cid(plugin_id)
             .ok_or_else(|| HostError::Load(format!("invalid VST3 class id: {plugin_id}")))?;
 
@@ -58,7 +54,8 @@ impl Vst3PluginInstance {
             .ok_or_else(|| HostError::Load("could not create host context".into()))?;
 
         // Instantiate the component and bring it up.
-        let component: ComPtr<IComponent> = unsafe { create_instance(&module, &cid) }
+        let component: ComPtr<IComponent> = module
+            .create_instance(&cid)
             .ok_or_else(|| HostError::Load("createInstance(IComponent) failed".into()))?;
         unsafe { component.initialize(ctx.as_ptr()) };
 
@@ -250,20 +247,6 @@ impl Drop for Vst3PluginInstance {
     }
 }
 
-/// `IPluginFactory::createInstance(cid, IComponent)`.
-unsafe fn create_instance(module: &Vst3Module, cid: &TUID) -> Option<ComPtr<IComponent>> {
-    let iid = IComponent::IID;
-    let mut obj: *mut c_void = ptr::null_mut();
-    let result = unsafe {
-        module.factory.createInstance(cid.as_ptr(), iid.as_ptr() as FIDString, &mut obj)
-    };
-    if result == kResultOk && !obj.is_null() {
-        unsafe { ComPtr::from_raw(obj as *mut IComponent) }
-    } else {
-        None
-    }
-}
-
 /// Obtain the edit controller (the component itself, or a separate class) and
 /// connect it to the component. Best effort: returns `None` if unavailable.
 unsafe fn setup_controller(
@@ -276,20 +259,9 @@ unsafe fn setup_controller(
         if unsafe { component.getControllerClassId(&mut cid) } != kResultOk {
             return None;
         }
-        let iid = IEditController::IID;
-        let mut obj: *mut c_void = ptr::null_mut();
-        let result = unsafe {
-            module.factory.createInstance(cid.as_ptr(), iid.as_ptr() as FIDString, &mut obj)
-        };
-        if result == kResultOk && !obj.is_null() {
-            let controller = unsafe { ComPtr::<IEditController>::from_raw(obj as *mut IEditController) };
-            if let Some(controller) = &controller {
-                unsafe { controller.initialize(ctx) };
-            }
-            controller
-        } else {
-            None
-        }
+        let controller = module.create_instance::<IEditController>(&cid)?;
+        unsafe { controller.initialize(ctx) };
+        Some(controller)
     })?;
 
     // Wire the component ↔ controller connection points (if both expose them).
