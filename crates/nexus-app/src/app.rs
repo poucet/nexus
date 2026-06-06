@@ -196,41 +196,66 @@ impl NexusApp {
         }
     }
 
-    /// The Settings dialog (device selection). Returns a device change request.
+    /// The Settings dialog (device selection), shown as its own always-on-top
+    /// OS window so it stays visible above the plugin's editor window. Returns a
+    /// device change request.
     fn settings_dialog(&mut self, ctx: &egui::Context) -> Option<String> {
         let mut device_change = None;
-        let mut open = self.settings_open;
-        egui::Window::new("Settings")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .show(ctx, |ui| {
-                ui.label("Audio output device");
-                let current = self.selected_device.clone().unwrap_or_else(|| "default".into());
-                egui::ComboBox::from_id_salt("settings-output-device")
-                    .selected_text(current)
-                    .show_ui(ui, |ui| {
-                        for name in &self.devices {
-                            let selected = self.selected_device.as_deref() == Some(name);
-                            if ui.selectable_label(selected, name).clicked() && !selected {
-                                device_change = Some(name.clone());
+        let mut close = false;
+
+        let builder = egui::ViewportBuilder::default()
+            .with_title("Nexus — Settings")
+            .with_inner_size([400.0, 220.0])
+            .with_resizable(false)
+            .with_window_level(egui::WindowLevel::AlwaysOnTop);
+
+        ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of("nexus-settings"),
+            builder,
+            |ctx, _class| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.add_space(8.0);
+                    ui.label("Audio output device");
+                    let current = self.selected_device.clone().unwrap_or_else(|| "default".into());
+                    egui::ComboBox::from_id_salt("settings-output-device")
+                        .width(360.0)
+                        .selected_text(current)
+                        .show_ui(ui, |ui| {
+                            for name in &self.devices {
+                                let selected = self.selected_device.as_deref() == Some(name);
+                                if ui.selectable_label(selected, name).clicked() && !selected {
+                                    device_change = Some(name.clone());
+                                }
                             }
-                        }
-                    });
-                ui.separator();
-                if let Some(engine) = &self.engine {
+                        });
+                    ui.add_space(8.0);
+                    ui.separator();
+                    if let Some(engine) = &self.engine {
+                        ui.label(format!(
+                            "MIDI input: {}",
+                            engine.midi_source_name().unwrap_or("none")
+                        ));
+                        ui.label(format!(
+                            "{} Hz, {} ch",
+                            engine.sample_rate() as u32,
+                            engine.channels()
+                        ));
+                    }
                     ui.label(format!(
-                        "MIDI input: {}",
-                        engine.midi_source_name().unwrap_or("none")
+                        "Presets: {}",
+                        nexus_host::discovery::config::preset_directory().display()
                     ));
-                    ui.label(format!("{} Hz, {} ch", engine.sample_rate() as u32, engine.channels()));
+                });
+
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    close = true;
                 }
-                ui.label(format!(
-                    "Presets: {}",
-                    nexus_host::discovery::config::preset_directory().display()
-                ));
-            });
-        self.settings_open = open;
+            },
+        );
+
+        if close {
+            self.settings_open = false;
+        }
         device_change
     }
 }
