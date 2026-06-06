@@ -8,9 +8,20 @@
 use std::path::PathBuf;
 
 use crate::PluginFormat;
-use crate::clap;
 use crate::discovery::{cache, scan};
-use crate::host::PluginDescriptor;
+use crate::host::{HostError, PluginDescriptor};
+use crate::{clap, vst3};
+
+/// Probe one bundle for its descriptors, dispatching on format.
+fn probe_bundle(
+    format: PluginFormat,
+    path: &std::path::Path,
+) -> Result<Vec<PluginDescriptor>, HostError> {
+    match format {
+        PluginFormat::Clap => clap::probe::probe(path),
+        PluginFormat::Vst3 => vst3::probe::probe(path),
+    }
+}
 
 /// A single plugin the host can load: its format, the bundle containing it, and
 /// the descriptor read from that bundle's factory. One bundle may yield several
@@ -42,16 +53,11 @@ impl PluginCatalog {
     /// Scan the standard + configured directories and probe every bundle.
     ///
     /// Never fails: bundles that can't be loaded are logged at `warn` and
-    /// skipped. (VST3 probing arrives in T11; VST3 bundles are skipped until
-    /// then.)
+    /// skipped.
     pub fn scan() -> Self {
         let mut plugins = Vec::new();
         for (format, path) in scan::scan_all() {
-            let descriptors = match format {
-                PluginFormat::Clap => clap::probe::probe(&path),
-                PluginFormat::Vst3 => continue, // TODO(T11): VST3 probe
-            };
-            match descriptors {
+            match probe_bundle(format, &path) {
                 Ok(descriptors) => plugins.extend(descriptors.into_iter().map(|descriptor| {
                     PluginRef { format, path: path.clone(), descriptor }
                 })),
@@ -73,17 +79,12 @@ impl PluginCatalog {
         let mut plugins = Vec::new();
 
         for (format, path) in scan::scan_all() {
-            // VST3 probing arrives in T11; skip those bundles for now.
-            if format != PluginFormat::Clap {
-                continue;
-            }
-
             let mtime = cache::file_mtime(&path);
             let descriptors = match (mtime, cached.entries.get(&path)) {
                 // Unchanged since last probe — reuse, without loading the binary.
                 (Some(m), Some(entry)) if entry.mtime == m => entry.descriptors.clone(),
                 // New or changed — probe it (loads the binary).
-                _ => match clap::probe::probe(&path) {
+                _ => match probe_bundle(format, &path) {
                     Ok(descriptors) => descriptors,
                     Err(e) => {
                         log::warn!("skipping plugin bundle: {e}");

@@ -14,6 +14,7 @@ pub mod discovery;
 pub mod host;
 pub mod preset;
 pub mod process;
+pub mod vst3;
 #[cfg(feature = "ui")]
 pub mod ui;
 

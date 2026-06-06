@@ -19,6 +19,10 @@ clack-host.workspace = true
 clack-extensions.workspace = true
 crossbeam-channel.workspace = true
 raw-window-handle.workspace = true
+# VST3 hosting: pure-Rust COM bindings (renamed to avoid clashing with our
+# `vst3` module) + dynamic loading of the plugin bundle binary.
+vst3-sdk = { version = "0.3", package = "vst3" }
+libloading = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
