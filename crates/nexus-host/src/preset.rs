@@ -156,6 +156,7 @@ mod tests {
         let loaded = Preset::load_from_file(&path).expect("load");
         let _ = std::fs::remove_file(&path);
 
+        assert_eq!(preset.state, loaded.state, "file round-trip altered the state bytes");
         let _recalled = loaded.recall(&host).expect("recall");
         println!("recalled plugin from preset OK");
     }
