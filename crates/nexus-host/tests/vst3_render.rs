@@ -77,3 +77,27 @@ fn renders_audio_from_a_vst3_synth() {
     println!("{} peak output over 40 blocks: {peak}", plugin.display_name());
     assert!(peak > 0.0, "synth produced silence");
 }
+
+#[test]
+#[ignore = "loads a real VST3 plugin; machine-specific"]
+fn vst3_state_round_trips() {
+    let catalog = PluginCatalog::scan();
+    let Some(plugin) = pick_synth(&catalog) else {
+        eprintln!("no known VST3 synth installed; skipping");
+        return;
+    };
+    let host = Host::new();
+
+    // Capture state from one instance.
+    let mut a = host.load(&plugin).expect("load a");
+    let s1 = a.save_state().expect("save_state");
+    println!("{}: state is {} bytes", plugin.display_name(), s1.len());
+    assert!(!s1.is_empty(), "expected non-empty VST3 state");
+
+    // Restore it into a fresh instance and re-save — must be byte-identical.
+    let mut b = host.load(&plugin).expect("load b");
+    b.load_state(&s1).expect("load_state");
+    let s2 = b.save_state().expect("re-save");
+    assert_eq!(s1, s2, "VST3 state did not round-trip byte-for-byte");
+    println!("VST3 state round-trips byte-for-byte ({} bytes)", s1.len());
+}

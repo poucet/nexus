@@ -12,11 +12,12 @@ use std::ptr;
 
 use vst3_sdk::Steinberg::Vst::{
     BusDirection, BusDirections_, BusInfo, IAudioProcessor, IAudioProcessorTrait, IComponent,
-    IComponentTrait, IConnectionPoint, IConnectionPointTrait, IEditController, MediaType,
-    MediaTypes_, ProcessModes_, ProcessSetup, SpeakerArr, SpeakerArrangement, SymbolicSampleSizes_,
+    IComponentTrait, IConnectionPoint, IConnectionPointTrait, IEditController, IEditControllerTrait,
+    MediaType, MediaTypes_, ProcessModes_, ProcessSetup, SpeakerArr, SpeakerArrangement,
+    SymbolicSampleSizes_,
 };
 use vst3_sdk::Steinberg::{
-    FIDString, FUnknown, IPluginBaseTrait, IPluginFactoryTrait, TUID, kResultOk,
+    FIDString, FUnknown, IBStream, IPluginBaseTrait, IPluginFactoryTrait, TUID, kResultOk,
 };
 use vst3_sdk::{ComPtr, ComWrapper, Interface};
 
@@ -24,6 +25,7 @@ use crate::host::{AudioConfig, AudioProcessor, HostError, PluginInstance};
 use crate::vst3::host_app::Vst3HostApp;
 use crate::vst3::module::Vst3Module;
 use crate::vst3::process::Vst3AudioProcessor;
+use crate::vst3::state::HostStream;
 
 /// A loaded VST3 plugin (main-thread side).
 pub struct Vst3PluginInstance {
@@ -166,6 +168,37 @@ impl PluginInstance for Vst3PluginInstance {
 
     fn latency(&mut self) -> u32 {
         unsafe { self.processor.getLatencySamples() }
+    }
+
+    fn save_state(&mut self) -> Result<Vec<u8>, HostError> {
+        let stream = HostStream::empty();
+        let ptr = stream
+            .to_com_ptr::<IBStream>()
+            .ok_or_else(|| HostError::Preset("could not create state stream".into()))?;
+        let result = unsafe { self.component.getState(ptr.as_ptr()) };
+        if result != kResultOk {
+            return Err(HostError::Preset(format!("getState failed ({result})")));
+        }
+        Ok(stream.to_vec())
+    }
+
+    fn load_state(&mut self, data: &[u8]) -> Result<(), HostError> {
+        let stream = HostStream::from_bytes(data);
+        let ptr = stream
+            .to_com_ptr::<IBStream>()
+            .ok_or_else(|| HostError::Preset("could not create state stream".into()))?;
+        let result = unsafe { self.component.setState(ptr.as_ptr()) };
+        if result != kResultOk {
+            return Err(HostError::Preset(format!("setState failed ({result})")));
+        }
+        // Sync the controller's parameters from the (rewound) component state.
+        if let Some(controller) = &self.controller {
+            let stream = HostStream::from_bytes(data);
+            if let Some(ptr) = stream.to_com_ptr::<IBStream>() {
+                unsafe { controller.setComponentState(ptr.as_ptr()) };
+            }
+        }
+        Ok(())
     }
 }
 
