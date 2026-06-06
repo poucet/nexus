@@ -1,8 +1,9 @@
 //! The native menu bar (via `muda`): Plugin ▸ (load), State ▸ (save/load), and
 //! Settings. Portable — a real menu bar on macOS, native menus on Win/Linux.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
+use muda::accelerator::Accelerator;
 use muda::{Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
 use nexus_host::PluginRef;
 
@@ -10,6 +11,8 @@ use nexus_host::PluginRef;
 #[derive(Clone)]
 pub enum MenuAction {
     Load(PluginRef),
+    /// Open the searchable plugin palette (native menus can't host a text field).
+    FindPlugin,
     SavePreset,
     LoadPreset,
     OpenSettings,
@@ -49,13 +52,30 @@ impl AppMenu {
         let _ = app.append(&PredefinedMenuItem::quit(None));
         let _ = menu.append(&app);
 
-        // Plugin ▸ <every discovered plugin>
+        // Plugin ▸ Find… (search palette) + per-vendor submenus.
         let plugin_menu = Submenu::new("Plugin", true);
+
+        let find = MenuItem::new("Find Plugin…", true, "CmdOrCtrl+P".parse::<Accelerator>().ok());
+        actions.insert(find.id().clone(), MenuAction::FindPlugin);
+        let _ = plugin_menu.append(&find);
+        let _ = plugin_menu.append(&PredefinedMenuItem::separator());
+
+        // Group by vendor; vendors (BTreeMap) and plugins sorted alphabetically.
+        let mut by_vendor: BTreeMap<String, Vec<&PluginRef>> = BTreeMap::new();
         for plugin in plugins {
-            let label = format!("{}  ({:?})", plugin.display_name(), plugin.format);
-            let item = MenuItem::new(label, true, None);
-            actions.insert(item.id().clone(), MenuAction::Load(plugin.clone()));
-            let _ = plugin_menu.append(&item);
+            let vendor = plugin.descriptor.vendor.clone().unwrap_or_else(|| "Other".into());
+            by_vendor.entry(vendor).or_default().push(plugin);
+        }
+        for (vendor, mut items) in by_vendor {
+            items.sort_by_key(|p| p.display_name().to_lowercase());
+            let submenu = Submenu::new(&vendor, true);
+            for plugin in items {
+                let label = format!("{}  ({:?})", plugin.display_name(), plugin.format);
+                let item = MenuItem::new(label, true, None);
+                actions.insert(item.id().clone(), MenuAction::Load(plugin.clone()));
+                let _ = submenu.append(&item);
+            }
+            let _ = plugin_menu.append(&submenu);
         }
         let _ = menu.append(&plugin_menu);
 

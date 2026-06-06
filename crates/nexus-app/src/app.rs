@@ -26,6 +26,11 @@ pub struct NexusApp {
     /// Which catalog entry is loaded (for presets / display).
     loaded: Option<PluginRef>,
     status: String,
+    /// All discovered plugins, for the searchable finder palette.
+    plugins: Vec<PluginRef>,
+    /// Whether the finder palette is open, and its current filter text.
+    finder_open: bool,
+    finder_query: String,
 }
 
 impl NexusApp {
@@ -40,7 +45,8 @@ impl NexusApp {
 
         // Cached scan so we don't load/initialize every plugin binary on startup.
         let catalog = PluginCatalog::load_or_scan();
-        let menu = AppMenu::new(catalog.plugins());
+        let plugins = catalog.plugins().to_vec();
+        let menu = AppMenu::new(&plugins);
 
         let (engine, status) = match Engine::start() {
             Ok(engine) => {
@@ -62,6 +68,9 @@ impl NexusApp {
             instance: None,
             loaded: None,
             status,
+            plugins,
+            finder_open: false,
+            finder_query: String::new(),
         }
     }
 
@@ -258,6 +267,79 @@ impl NexusApp {
         }
         device_change
     }
+
+    /// The searchable plugin palette: a filter box + matching list, in its own
+    /// always-on-top window (native menus can't host a text field). Returns a
+    /// plugin to load when one is chosen (click, or Enter on the top match).
+    fn plugin_finder(&mut self, ctx: &egui::Context) -> Option<PluginRef> {
+        let mut chosen = None;
+        let mut close = false;
+
+        let builder = egui::ViewportBuilder::default()
+            .with_title("Nexus — Find Plugin")
+            .with_inner_size([460.0, 520.0])
+            .with_window_level(egui::WindowLevel::AlwaysOnTop);
+
+        ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of("nexus-plugin-finder"),
+            builder,
+            |ctx, _class| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.add_space(6.0);
+                    let edit = ui.add(
+                        egui::TextEdit::singleline(&mut self.finder_query)
+                            .hint_text("Type to filter by name or vendor…")
+                            .desired_width(f32::INFINITY),
+                    );
+                    edit.request_focus();
+                    ui.add_space(4.0);
+                    ui.separator();
+
+                    let query = self.finder_query.to_lowercase();
+                    let mut matches: Vec<&PluginRef> = self
+                        .plugins
+                        .iter()
+                        .filter(|p| {
+                            query.is_empty()
+                                || p.display_name().to_lowercase().contains(&query)
+                                || p.descriptor
+                                    .vendor
+                                    .as_deref()
+                                    .is_some_and(|v| v.to_lowercase().contains(&query))
+                        })
+                        .collect();
+                    matches.sort_by_key(|p| p.display_name().to_lowercase());
+
+                    // Enter loads the top match.
+                    if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if let Some(p) = matches.first() {
+                            chosen = Some((*p).clone());
+                        }
+                    }
+
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for p in matches {
+                            let vendor = p.descriptor.vendor.as_deref().unwrap_or("?");
+                            let label =
+                                format!("{}  —  {}  ({:?})", p.display_name(), vendor, p.format);
+                            if ui.selectable_label(false, label).clicked() {
+                                chosen = Some(p.clone());
+                            }
+                        }
+                    });
+                });
+
+                if ctx.input(|i| i.viewport().close_requested()) {
+                    close = true;
+                }
+            },
+        );
+
+        if chosen.is_some() || close {
+            self.finder_open = false;
+        }
+        chosen
+    }
 }
 
 impl eframe::App for NexusApp {
@@ -311,15 +393,23 @@ impl eframe::App for NexusApp {
         } else {
             None
         };
+        let finder_choice = if self.finder_open { self.plugin_finder(ctx) } else { None };
 
         // Act on this frame's requests.
         for action in menu_actions {
             match action {
                 MenuAction::Load(plugin) => self.load_plugin(&plugin),
+                MenuAction::FindPlugin => {
+                    self.finder_query.clear();
+                    self.finder_open = true;
+                }
                 MenuAction::SavePreset => self.save_preset(),
                 MenuAction::LoadPreset => self.load_preset(),
                 MenuAction::OpenSettings => self.settings_open = true,
             }
+        }
+        if let Some(plugin) = finder_choice {
+            self.load_plugin(&plugin);
         }
         if let Some(name) = device_change {
             self.set_output_device(name);
