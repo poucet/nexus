@@ -48,7 +48,7 @@ impl Vst3PluginInstance {
     /// Load the `.vst3` bundle at `path` and instantiate the audio class whose
     /// hex-encoded class UID is `plugin_id` (as produced by the probe).
     pub fn load(path: &Path, plugin_id: &str) -> Result<Self, HostError> {
-        let module = Vst3Module::load(path)?;
+        let module = Vst3Module::host(path)?;
         let cid = parse_cid(plugin_id)
             .ok_or_else(|| HostError::Load(format!("invalid VST3 class id: {plugin_id}")))?;
 
@@ -158,7 +158,7 @@ impl PluginInstance for Vst3PluginInstance {
             .ok_or_else(|| HostError::Load("plugin has no IAudioProcessor".into()))?;
         Ok(Box::new(Vst3AudioProcessor::new(
             audio_processor,
-            self.module.library(),
+            self.module.keepalive(),
             &in_channels,
             &out_channels,
             config.max_block_frames,

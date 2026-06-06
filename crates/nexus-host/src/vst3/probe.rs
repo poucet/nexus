@@ -13,8 +13,7 @@ const AUDIO_MODULE_CLASS: &str = "Audio Module Class";
 /// Read the audio-plugin descriptors a `.vst3` bundle exposes, without
 /// instantiating anything. The plugin id is the class UID (hex-encoded).
 pub fn probe(bundle: &Path) -> Result<Vec<PluginDescriptor>, HostError> {
-    let module = Vst3Module::load(bundle)?;
-    let factory = &module.factory;
+    let factory = Vst3Module::probe(bundle)?;
 
     // Vendor is factory-wide.
     let vendor = unsafe {

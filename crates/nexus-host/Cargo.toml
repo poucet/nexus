@@ -27,7 +27,8 @@ libloading = "0.8"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
 objc2-app-kit.workspace = true
-objc2-foundation.workspace = true
+# NSBundle: a real CFBundle (toll-free bridged) for VST3 macOS module loading.
+objc2-foundation = { workspace = true, features = ["NSBundle"] }
 egui = { workspace = true, optional = true }
 
 [features]
@@ -35,3 +36,10 @@ egui = { workspace = true, optional = true }
 # nexus-app and nexus-wrap. Off by default so the bare library — and a future
 # web DAW — pull in no egui.
 ui = ["dep:egui"]
+
+# Hosting a VST3 runs its module init (bundleEntry) on the main thread, so this
+# end-to-end check uses a custom main() (harness = false) instead of the default
+# test harness (which runs tests on worker threads). Opt in via NEXUS_VST3_TEST=1.
+[[test]]
+name = "vst3_render"
+harness = false

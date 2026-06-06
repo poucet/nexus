@@ -1,16 +1,40 @@
-//! Headless end-to-end check of VST3 hosting: load a real synth, feed it a
-//! note, and confirm it renders non-silent audio through the full
-//! instantiate → activate → process path. Ignored by default (machine-specific).
+//! End-to-end check of VST3 hosting against a real installed synth: load → feed
+//! a note → render, plus state round-trip and parameter enumeration.
 //!
-//!   cargo test -p nexus-host --test vst3_render -- --ignored --nocapture
-
-use std::path::PathBuf;
+//! Run **on the main thread** (`harness = false`): hosting a plugin runs its
+//! module init (`bundleEntry`), which — like a DAW — must happen on the main
+//! thread; the default test harness runs tests on worker threads and the plugin
+//! would trap. Opt in (it loads real plugins):
+//!
+//!   NEXUS_VST3_TEST=1 cargo test -p nexus-host --test vst3_render
 
 use nexus_host::process::{AudioBuffer, Event, EventBuffer, ProcessBlock};
-use nexus_host::{AudioConfig, Host, PluginCatalog, PluginFormat};
+use nexus_host::{AudioConfig, Host, PluginCatalog, PluginFormat, PluginRef};
 
-/// Find an installed VST3 instrument we can drive. Prefers known synths.
-fn pick_synth(catalog: &PluginCatalog) -> Option<nexus_host::PluginRef> {
+fn main() {
+    if std::env::var_os("NEXUS_VST3_TEST").is_none() {
+        eprintln!(
+            "vst3_render: skipped — set NEXUS_VST3_TEST=1 to run \
+             (loads real VST3 plugins on the main thread)"
+        );
+        return;
+    }
+
+    let catalog = PluginCatalog::scan();
+    let Some(plugin) = pick_synth(&catalog) else {
+        eprintln!("no known VST3 synth installed; skipping");
+        return;
+    };
+
+    renders_audio(&plugin);
+    state_round_trips(&plugin);
+    enumerates_parameters(&plugin);
+    eprintln!("\nall vst3_render checks passed");
+}
+
+/// Find an installed VST3 instrument we can drive. Prefers known synths and
+/// skips effect variants.
+fn pick_synth(catalog: &PluginCatalog) -> Option<PluginRef> {
     const PREFERRED: &[&str] = &["Surge XT", "Vital", "Pigments", "OB-Xd", "TAL-NoiseMaker"];
     let vst3: Vec<_> = catalog
         .plugins()
@@ -18,7 +42,6 @@ fn pick_synth(catalog: &PluginCatalog) -> Option<nexus_host::PluginRef> {
         .filter(|p| p.format == PluginFormat::Vst3)
         .filter(|p| !p.display_name().contains("Effects") && !p.display_name().contains("FX"))
         .collect();
-    // Exact name first (so "Surge XT" wins over "Surge XT Effects"), then prefix.
     for name in PREFERRED {
         if let Some(p) = vst3.iter().find(|p| p.display_name() == *name) {
             return Some((*p).clone());
@@ -32,20 +55,11 @@ fn pick_synth(catalog: &PluginCatalog) -> Option<nexus_host::PluginRef> {
     None
 }
 
-#[test]
-#[ignore = "loads a real VST3 synth; machine-specific"]
-fn renders_audio_from_a_vst3_synth() {
-    // Probe the user VST3 dir for Surge XT regardless of cache.
-    let _ = PathBuf::new();
-    let catalog = PluginCatalog::scan();
-    let Some(plugin) = pick_synth(&catalog) else {
-        eprintln!("no known VST3 synth installed; skipping");
-        return;
-    };
+/// Load the synth, feed it a note, and confirm it renders non-silent audio.
+fn renders_audio(plugin: &PluginRef) {
     println!("loading {} ({})", plugin.display_name(), plugin.descriptor.id);
-
     let host = Host::new();
-    let mut instance = host.load(&plugin).expect("load");
+    let mut instance = host.load(plugin).expect("load");
     let max = 512;
     let mut processor = instance
         .activate(AudioConfig { sample_rate: 48_000.0, max_block_frames: max })
@@ -74,53 +88,35 @@ fn renders_audio_from_a_vst3_synth() {
     drop(processor);
     instance.deactivate();
 
-    println!("{} peak output over 40 blocks: {peak}", plugin.display_name());
+    println!("  peak output over 40 blocks: {peak}");
     assert!(peak > 0.0, "synth produced silence");
 }
 
-#[test]
-#[ignore = "loads a real VST3 plugin; machine-specific"]
-fn vst3_state_round_trips() {
-    let catalog = PluginCatalog::scan();
-    let Some(plugin) = pick_synth(&catalog) else {
-        eprintln!("no known VST3 synth installed; skipping");
-        return;
-    };
+/// Capture state from one instance, restore into a fresh one, and confirm the
+/// re-saved state is byte-identical.
+fn state_round_trips(plugin: &PluginRef) {
     let host = Host::new();
-
-    // Capture state from one instance.
-    let mut a = host.load(&plugin).expect("load a");
+    let mut a = host.load(plugin).expect("load a");
     let s1 = a.save_state().expect("save_state");
-    println!("{}: state is {} bytes", plugin.display_name(), s1.len());
     assert!(!s1.is_empty(), "expected non-empty VST3 state");
 
-    // Restore it into a fresh instance and re-save — must be byte-identical.
-    let mut b = host.load(&plugin).expect("load b");
+    let mut b = host.load(plugin).expect("load b");
     b.load_state(&s1).expect("load_state");
     let s2 = b.save_state().expect("re-save");
     assert_eq!(s1, s2, "VST3 state did not round-trip byte-for-byte");
-    println!("VST3 state round-trips byte-for-byte ({} bytes)", s1.len());
+    println!("  state round-trips byte-for-byte ({} bytes)", s1.len());
 }
 
-#[test]
-#[ignore = "loads a real VST3 plugin; machine-specific"]
-fn vst3_enumerates_parameters() {
-    let catalog = PluginCatalog::scan();
-    let Some(plugin) = pick_synth(&catalog) else {
-        eprintln!("no known VST3 synth installed; skipping");
-        return;
-    };
+/// Enumerate parameters and read a few values + display strings.
+fn enumerates_parameters(plugin: &PluginRef) {
     let host = Host::new();
-    let mut instance = host.load(&plugin).expect("load");
+    let mut instance = host.load(plugin).expect("load");
     let params = instance.params();
-    println!("{}: {} parameters", plugin.display_name(), params.len());
-    for p in params.iter().take(6) {
+    println!("  {} parameters", params.len());
+    for p in params.iter().take(4) {
         let val = instance.param_value(p.id);
         let text = val.and_then(|v| instance.param_value_to_text(p.id, v));
-        println!(
-            "  #{:<6} {:<28} [{:.2}..{:.2}] = {:?} ({:?})",
-            p.id, p.name, p.min_value, p.max_value, val, text
-        );
+        println!("    #{:<8} {:<24} = {:?} ({:?})", p.id, p.name, val, text);
     }
     assert!(!params.is_empty(), "expected the synth to expose parameters");
 }

@@ -10,7 +10,6 @@
 use std::ptr;
 use std::sync::Arc;
 
-use libloading::Library;
 use vst3_sdk::Steinberg::Vst::{
     AudioBusBuffers, AudioBusBuffers__type0, Event, Event_, IAudioProcessor, IAudioProcessorTrait,
     IEventList, NoteOffEvent, NoteOnEvent, ProcessData, ProcessModes_, SymbolicSampleSizes_,
@@ -20,6 +19,7 @@ use vst3_sdk::{ComPtr, ComWrapper};
 use crate::host::{AudioProcessor, HostError};
 use crate::process::{Event as FacadeEvent, NoteEventKind, ProcessBlock, TimedEvent};
 use crate::vst3::event_list::HostEventList;
+use crate::vst3::module::LoadedModule;
 
 /// Per-channel buffers for one audio bus, plus the channel-pointer array VST3
 /// reads/writes (`channelBuffers32`).
@@ -55,8 +55,8 @@ impl BusBuffers {
 /// audio thread, so the whole processor is `Send` (see the `unsafe impl`).
 pub struct Vst3AudioProcessor {
     processor: ComPtr<IAudioProcessor>,
-    /// Pins the plugin's dylib loaded for as long as this processor lives.
-    _library: Arc<Library>,
+    /// Pins the plugin's module loaded for as long as this processor lives.
+    _module: Arc<dyn LoadedModule>,
     max_frames: usize,
     in_buses: Vec<BusBuffers>,
     out_buses: Vec<BusBuffers>,
@@ -77,7 +77,7 @@ impl Vst3AudioProcessor {
     /// each audio bus, in bus-index order (bus 0 is the main bus).
     pub fn new(
         processor: ComPtr<IAudioProcessor>,
-        library: Arc<Library>,
+        module: Arc<dyn LoadedModule>,
         input_bus_channels: &[usize],
         output_bus_channels: &[usize],
         max_frames: usize,
@@ -87,7 +87,7 @@ impl Vst3AudioProcessor {
             output_bus_channels.iter().map(|&c| BusBuffers::new(c, max_frames)).collect();
         Self {
             processor,
-            _library: library,
+            _module: module,
             max_frames,
             in_buses,
             out_buses,
