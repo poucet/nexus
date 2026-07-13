@@ -36,6 +36,9 @@ pub struct NexusApp {
 impl NexusApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // A little breathing room and dark theme — the defaults are cramped.
+        // Pin the theme (don't follow the system): set_visuals alone is undone
+        // when winit reports a light system theme.
+        cc.egui_ctx.set_theme(egui::ThemePreference::Dark);
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
         let mut style = (*cc.egui_ctx.style()).clone();
         style.spacing.item_spacing = egui::vec2(8.0, 8.0);

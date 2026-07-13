@@ -37,8 +37,10 @@ objc2-foundation = "0.3"
 # Pinned to 0.31 — newer egui (0.34) requires rustc 1.92; we target 1.90.
 egui = "0.31"
 
-# nexus-app: windowing + audio/MIDI devices + file dialogs.
-eframe = "0.31"
+# nexus-app: windowing + audio/MIDI devices + file dialogs. The wgpu renderer
+# (Metal on macOS) keeps the host UI off OpenGL, which VST3 plugin editors
+# clobber (grey flicker under the default glow renderer).
+eframe = { version = "0.31", features = ["wgpu"] }
 cpal = "0.15"
 midir = "0.10"
 rtrb = "0.3"

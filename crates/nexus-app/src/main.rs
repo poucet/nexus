@@ -13,6 +13,10 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([900.0, 600.0]),
+        // Metal-backed rendering: plugin editors that run their own OpenGL
+        // context (common for VST3) corrupt the default glow renderer's state,
+        // flickering the main window grey.
+        renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
 

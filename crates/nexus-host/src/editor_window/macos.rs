@@ -66,8 +66,12 @@ impl EditorWindow for MacOsEditorWindow {
             return;
         }
         // Pin the plugin's view to the origin (Cocoa is bottom-left) so it isn't
-        // clipped above the visible area.
-        view.setFrameOrigin(NSPoint::new(0.0, 0.0));
+        // clipped above the visible area. Only when it moved — setFrameOrigin
+        // invalidates the view, and this runs every frame.
+        let origin = view.frame().origin;
+        if origin.x != 0.0 || origin.y != 0.0 {
+            view.setFrameOrigin(NSPoint::new(0.0, 0.0));
+        }
         // Match the window to the view, only if it actually differs.
         let current = content.bounds().size;
         if (current.width - size.width).abs() > 0.5 || (current.height - size.height).abs() > 0.5 {
