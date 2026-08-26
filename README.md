@@ -23,9 +23,10 @@ This is a Cargo workspace. Each crate is a layer on top of the one before it:
 
 | Crate | Kind | Purpose |
 | --- | --- | --- |
-| [`nexus-host`](crates/nexus-host) | library | The engine that discovers, loads, and runs VST3/CLAP plugins. |
+| [`nexus-host`](crates/nexus-host) | library | The engine that discovers, loads, and runs VST3/CLAP plugins. No device I/O. |
+| [`nexus-app`](crates/nexus-app) | binary (`nexus-app`) | Standalone host app: egui UI, CPAL audio out, MIDI in, plugin browser + editor windows. |
 | [`nexus-wrap`](crates/nexus-wrap) | cdylib + lib | A VST3/CLAP plugin that itself hosts another plugin — load any wrapped plugin inside a DAW. |
-| [`nexus-daw`](crates/nexus-daw) | binary (`nexus`) | The AI-first DAW application shell. |
+| [`nexus-daw`](crates/nexus-daw) | binary (`nexus`) | The AI-first DAW application shell (stub for now). |
 
 ```
 nexus/
@@ -34,27 +35,41 @@ nexus/
 ├── xtask/                # build helper: compiles + bundles the plugin
 └── crates/
     ├── nexus-host/       # hosting engine (the foundation)
+    ├── nexus-app/        # standalone host app (the 0.1 deliverable)
     ├── nexus-wrap/       # plugin that wraps/hosts another plugin
     └── nexus-daw/        # the DAW application
 ```
 
-> **Status:** early scaffolding. Every crate currently builds as a stub. Plugin
-> loading, the wrapper export entry points, and the DAW UI are not yet
-> implemented.
+> **Status:** 0.1 "Load & Hear" works on macOS — `nexus-app` scans the standard
+> plugin folders, loads CLAP and VST3 plugins, plays them through the default
+> audio output (hardware MIDI or the built-in virtual keyboard), opens their
+> editors, and saves/recalls presets. `nexus-wrap` and `nexus-daw` are stubs.
 
-## Building
+## Quickstart
 
 Requires a recent stable Rust toolchain (edition 2024, `rustc` ≥ 1.90).
+macOS only for now.
 
 ```sh
-# Build everything
-cargo build
+cargo run --bin nexus-app
+```
 
-# Run the (stub) DAW
-cargo run --bin nexus
+- Plugins are discovered in the standard folders
+  (`~/Library/Audio/Plug-Ins/{CLAP,VST3}` and the `/Library` equivalents);
+  add extra search paths in `~/Library/Application Support/Nexus/config.toml`
+  (`[plugins] clap = [...] vst3 = [...]`).
+- Load a plugin from the **Plugin** menu (grouped by vendor) or the searchable
+  finder palette (**⌘P**). Its editor opens in its own window.
+- Play with a connected MIDI device or the on-screen keyboard
+  (keys `A W S E D F T G Y H U J K`, octave shift).
+- **State ▸ Save/Load** captures a `.nexuspreset` (plugin identity + its full
+  state); **Settings…** picks the audio output device.
+- The first launch probes every plugin bundle; results are cached, so later
+  launches only re-probe bundles that changed.
 
-# Test
-cargo test
+```sh
+cargo build   # build everything
+cargo test    # run tests
 ```
 
 ### Bundling the plugin
@@ -86,16 +101,14 @@ follows the same stack proven in the sibling `droplets` project:
 
 - **CLAP, host + plugin** — [`clack`](https://github.com/prokopyl/clack) for
   safe CLAP bindings. `clack` covers both sides, so `nexus-host` uses its host
-  API and `nexus-wrap` uses its plugin API.
+  API and `nexus-wrap` will use its plugin API.
+- **VST3 hosting** — the pure-Rust [`vst3`](https://crates.io/crates/vst3-sdk)
+  COM bindings (no Steinberg SDK checkout needed to *host*).
 - **VST3 export** — [`clap-wrapper`](https://github.com/blepfx/clap-wrapper-rs)
-  wraps the CLAP plugin as a VST3 (`clap_wrapper::export_vst3!()`), so a single
-  implementation ships in both formats.
+  will wrap the CLAP `nexus-wrap` plugin as a VST3, so a single implementation
+  ships in both formats.
 - **Bundling** — a custom `xtask` builds the cdylib and lays it out into the
   platform-specific `.clap`/`.vst3` bundle structures.
-
-The `clack`/`clap-wrapper` dependencies are not wired into `nexus-wrap` yet —
-the workspace is dependency-light while the core `nexus-host` interfaces settle
-— but the build pipeline and bundle metadata are already in place for them.
 
 ## License
 

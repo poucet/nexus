@@ -38,6 +38,7 @@ Notes:
 ```sh
 cargo build                 # build the whole workspace
 cargo test                  # run tests
+cargo run --bin nexus-app   # run the standalone host app (the 0.1 deliverable)
 cargo run --bin nexus       # run the (stub) DAW
 
 cargo bundle                # build + bundle every plugin crate as CLAP + VST3

@@ -118,7 +118,7 @@ both CLAP and VST3 views attach into it.
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| 🔄 | T23 | Full flow on macOS with real plugins: scan → browse → load (one CLAP **and** one VST3) → play via MIDI keyboard → editor opens and is interactive. Capture findings; note any plugin that misbehaves | manual verification; update `README.md` quickstart. |
+| ✅ | T23 | Full flow on macOS with real plugins: scan → browse → load (one CLAP **and** one VST3) → play via MIDI keyboard → editor opens and is interactive. Capture findings; note any plugin that misbehaves | Verified manually (2026-08-26). Findings, all fixed: `nexus` vs `nexus-app` bin confusion (docs), light theme (egui followed the system theme), grey main-window flicker with VST3 editors (glow/OpenGL renderer clobbered by plugin GL — switched to wgpu/Metal), segfault on quit (plugin terminated while the audio thread was mid-`process` — added a clear/ack handshake). `README.md` quickstart updated. |
 | ⬜ | T24 | Error surfacing: scan/probe/load failures show in the UI and are skipped, never crash the app | `crates/nexus-app` + `nexus-host` error types. |
 
 ## Feature 15: Wrapper UI + presets (`nexus-host`, `ui` feature)
