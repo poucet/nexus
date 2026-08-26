@@ -21,7 +21,7 @@ pub mod vst3;
 #[cfg(feature = "ui")]
 pub mod ui;
 
-pub use discovery::catalog::{PluginCatalog, PluginRef};
+pub use discovery::catalog::{CatalogFailure, PluginCatalog, PluginRef};
 pub use preset::Preset;
 pub use host::{
     AudioConfig, AudioProcessor, Host, HostError, ParamInfo, PluginDescriptor, PluginFormat,

@@ -5,7 +5,9 @@
 
 use eframe::egui;
 use nexus_host::host::PluginDescriptor;
-use nexus_host::{AudioConfig, Host, PluginCatalog, PluginInstance, PluginRef, Preset};
+use nexus_host::{
+    AudioConfig, CatalogFailure, Host, PluginCatalog, PluginInstance, PluginRef, Preset,
+};
 
 use crate::engine::{self, Engine};
 use crate::keyboard::{KeyEvent, VirtualKeyboard};
@@ -28,6 +30,8 @@ pub struct NexusApp {
     status: String,
     /// All discovered plugins, for the searchable finder palette.
     plugins: Vec<PluginRef>,
+    /// Bundles discovery found but could not probe, surfaced in the UI.
+    scan_failures: Vec<CatalogFailure>,
     /// Whether the finder palette is open, and its current filter text.
     finder_open: bool,
     finder_query: String,
@@ -49,11 +53,17 @@ impl NexusApp {
         // Cached scan so we don't load/initialize every plugin binary on startup.
         let catalog = PluginCatalog::load_or_scan();
         let plugins = catalog.plugins().to_vec();
+        let scan_failures = catalog.failures().to_vec();
         let menu = AppMenu::new(&plugins);
 
         let (engine, status) = match Engine::start() {
             Ok(engine) => {
-                let status = format!("Ready — {} plugins. Use the Plugin menu.", catalog.len());
+                let failed = match scan_failures.len() {
+                    0 => String::new(),
+                    n => format!(" ({n} bundle(s) failed to scan)"),
+                };
+                let status =
+                    format!("Ready — {} plugins{failed}. Use the Plugin menu.", catalog.len());
                 (Some(engine), status)
             }
             Err(e) => (None, format!("Audio engine failed: {e}")),
@@ -72,6 +82,7 @@ impl NexusApp {
             loaded: None,
             status,
             plugins,
+            scan_failures,
             finder_open: false,
             finder_query: String::new(),
         }
@@ -398,6 +409,34 @@ impl eframe::App for NexusApp {
             ui.separator();
             ui.add_space(8.0);
             ui.weak("Plugin-state explorer will live here.");
+
+            if !self.scan_failures.is_empty() {
+                ui.add_space(8.0);
+                egui::CollapsingHeader::new(format!(
+                    "⚠ {} plugin bundle(s) failed to scan",
+                    self.scan_failures.len()
+                ))
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                        for failure in &self.scan_failures {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.strong(format!(
+                                    "{} ({:?})",
+                                    failure
+                                        .path
+                                        .file_name()
+                                        .map(|n| n.to_string_lossy().into_owned())
+                                        .unwrap_or_else(|| failure.path.display().to_string()),
+                                    failure.format,
+                                ));
+                                ui.weak(&failure.error);
+                            })
+                            .response
+                            .on_hover_text(failure.path.display().to_string());
+                        }
+                    });
+                });
+            }
         });
 
         let device_change = if self.settings_open {

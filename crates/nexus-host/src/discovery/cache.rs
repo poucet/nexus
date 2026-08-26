@@ -20,6 +20,10 @@ pub struct CacheEntry {
     /// Bundle modification time (seconds since the Unix epoch).
     pub mtime: u64,
     pub descriptors: Vec<PluginDescriptor>,
+    /// Why the probe failed, if it did. Cached so a broken bundle isn't
+    /// re-loaded on every launch (and the failure can still be surfaced).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// The whole catalog cache: bundle path → its cached descriptors.
@@ -62,4 +66,21 @@ pub fn cache_path() -> Option<PathBuf> {
 pub fn file_mtime(path: &Path) -> Option<u64> {
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
     Some(modified.duration_since(UNIX_EPOCH).ok()?.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_round_trips_and_old_caches_still_parse() {
+        let entry = CacheEntry { mtime: 1, descriptors: vec![], error: Some("nope".into()) };
+        let json = serde_json::to_string(&entry).unwrap();
+        let back: CacheEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.error.as_deref(), Some("nope"));
+
+        // Entries written before the `error` field existed still deserialize.
+        let old: CacheEntry = serde_json::from_str(r#"{"mtime":1,"descriptors":[]}"#).unwrap();
+        assert!(old.error.is_none());
+    }
 }

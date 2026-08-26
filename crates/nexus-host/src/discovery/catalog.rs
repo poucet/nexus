@@ -43,28 +43,54 @@ impl PluginRef {
     }
 }
 
-/// The full set of discovered plugins.
+/// A bundle discovery found but could not probe, kept so UIs can surface it
+/// instead of the failure living only in the log.
+#[derive(Debug, Clone)]
+pub struct CatalogFailure {
+    pub format: PluginFormat,
+    pub path: PathBuf,
+    pub error: String,
+}
+
+/// The full set of discovered plugins, plus the bundles that failed to probe.
 #[derive(Debug, Clone, Default)]
 pub struct PluginCatalog {
     plugins: Vec<PluginRef>,
+    failures: Vec<CatalogFailure>,
 }
 
 impl PluginCatalog {
+    fn push_plugins(
+        &mut self,
+        format: PluginFormat,
+        path: &std::path::Path,
+        descriptors: Vec<PluginDescriptor>,
+    ) {
+        self.plugins.extend(descriptors.into_iter().map(|descriptor| PluginRef {
+            format,
+            path: path.to_path_buf(),
+            descriptor,
+        }));
+    }
+
+    fn push_failure(&mut self, format: PluginFormat, path: &std::path::Path, error: String) {
+        log::warn!("skipping plugin bundle {}: {error}", path.display());
+        self.failures.push(CatalogFailure { format, path: path.to_path_buf(), error });
+    }
+
     /// Scan the standard + configured directories and probe every bundle.
     ///
-    /// Never fails: bundles that can't be loaded are logged at `warn` and
-    /// skipped.
+    /// Never fails: bundles that can't be loaded are recorded in
+    /// [`failures`](Self::failures) (and logged) and skipped.
     pub fn scan() -> Self {
-        let mut plugins = Vec::new();
+        let mut catalog = Self::default();
         for (format, path) in scan::scan_all() {
             match probe_bundle(format, &path) {
-                Ok(descriptors) => plugins.extend(descriptors.into_iter().map(|descriptor| {
-                    PluginRef { format, path: path.clone(), descriptor }
-                })),
-                Err(e) => log::warn!("skipping plugin bundle: {e}"),
+                Ok(descriptors) => catalog.push_plugins(format, &path, descriptors),
+                Err(e) => catalog.push_failure(format, &path, e.to_string()),
             }
         }
-        Self { plugins }
+        catalog
     }
 
     /// Like [`scan`](Self::scan), but reuses an on-disk cache so unchanged
@@ -76,42 +102,51 @@ impl PluginCatalog {
     pub fn load_or_scan() -> Self {
         let cached = cache::CatalogCache::load();
         let mut fresh = cache::CatalogCache::default();
-        let mut plugins = Vec::new();
+        let mut catalog = Self::default();
 
         for (format, path) in scan::scan_all() {
             let mtime = cache::file_mtime(&path);
-            let descriptors = match (mtime, cached.entries.get(&path)) {
-                // Unchanged since last probe — reuse, without loading the binary.
-                (Some(m), Some(entry)) if entry.mtime == m => entry.descriptors.clone(),
+            let (descriptors, error) = match (mtime, cached.entries.get(&path)) {
+                // Unchanged since last probe — reuse, without loading the
+                // binary (failed probes are cached too, so a broken bundle
+                // isn't re-loaded every launch).
+                (Some(m), Some(entry)) if entry.mtime == m => {
+                    (entry.descriptors.clone(), entry.error.clone())
+                }
                 // New or changed — probe it (loads the binary).
                 _ => match probe_bundle(format, &path) {
-                    Ok(descriptors) => descriptors,
-                    Err(e) => {
-                        log::warn!("skipping plugin bundle: {e}");
-                        continue;
-                    }
+                    Ok(descriptors) => (descriptors, None),
+                    Err(e) => (Vec::new(), Some(e.to_string())),
                 },
             };
 
             if let Some(m) = mtime {
                 fresh.entries.insert(
                     path.clone(),
-                    cache::CacheEntry { mtime: m, descriptors: descriptors.clone() },
+                    cache::CacheEntry {
+                        mtime: m,
+                        descriptors: descriptors.clone(),
+                        error: error.clone(),
+                    },
                 );
             }
-            plugins.extend(descriptors.into_iter().map(|descriptor| PluginRef {
-                format,
-                path: path.clone(),
-                descriptor,
-            }));
+            match error {
+                Some(e) => catalog.push_failure(format, &path, e),
+                None => catalog.push_plugins(format, &path, descriptors),
+            }
         }
 
         fresh.save();
-        Self { plugins }
+        catalog
     }
 
     pub fn plugins(&self) -> &[PluginRef] {
         &self.plugins
+    }
+
+    /// Bundles discovery found but could not probe.
+    pub fn failures(&self) -> &[CatalogFailure] {
+        &self.failures
     }
 
     pub fn len(&self) -> usize {
@@ -130,6 +165,19 @@ mod tests {
     #[test]
     fn default_catalog_is_empty() {
         assert!(PluginCatalog::default().is_empty());
+    }
+
+    #[test]
+    fn failures_are_recorded_not_fatal() {
+        let mut catalog = PluginCatalog::default();
+        catalog.push_failure(
+            PluginFormat::Vst3,
+            std::path::Path::new("/broken.vst3"),
+            "boom".into(),
+        );
+        assert!(catalog.plugins().is_empty());
+        assert_eq!(catalog.failures().len(), 1);
+        assert_eq!(catalog.failures()[0].error, "boom");
     }
 
     #[test]
