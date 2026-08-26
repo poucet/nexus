@@ -1,21 +1,23 @@
 # Nexus
 
-A Rust-based **VST3 / CLAP plugin host**, growing into an AI-first DAW.
+A Rust-native **VST3 / CLAP plugin host**: a hosting-engine library and a
+standalone app that scans, loads, plays, and displays audio plugins.
 
 Nexus is built in layers. The foundation is a format-agnostic hosting engine
-that loads and runs VST3 and CLAP plugins behind a single interface. That engine
-is then reused to build a plugin-that-hosts-plugins, and ultimately a full
-digital audio workstation.
+that loads and runs VST3 and CLAP plugins behind a single interface. A
+standalone app drives that engine today; the next layer reuses it as a
+plugin-that-hosts-plugins.
 
 ## Goals
 
 - **One interface, two formats.** Callers should never branch on VST3 vs. CLAP —
   the host abstracts the difference away.
-- **Reusable core.** The hosting engine is a library that every higher layer
-  depends on, so there is exactly one implementation of plugin loading and
-  processing.
-- **AI-first.** The eventual DAW treats AI assistance as a primary part of the
-  workflow rather than a bolted-on feature.
+- **Reusable core.** The hosting engine is a library that every layer depends
+  on, so there is exactly one implementation of plugin loading and processing.
+- **Wrap anything.** The engine will ship as `nexus-wrap`, a plugin that hosts
+  another plugin, so anything Nexus can load can run — wrapped — inside any DAW.
+- **Programmable state (eventually).** A longer-term direction is an MCP
+  interface for inspecting and controlling a wrapped plugin's saved state.
 
 ## Workspace layout
 
@@ -26,7 +28,6 @@ This is a Cargo workspace. Each crate is a layer on top of the one before it:
 | [`nexus-host`](crates/nexus-host) | library | The engine that discovers, loads, and runs VST3/CLAP plugins. No device I/O. |
 | [`nexus-app`](crates/nexus-app) | binary (`nexus-app`) | Standalone host app: egui UI, CPAL audio out, MIDI in, plugin browser + editor windows. |
 | [`nexus-wrap`](crates/nexus-wrap) | cdylib + lib | A VST3/CLAP plugin that itself hosts another plugin — load any wrapped plugin inside a DAW. |
-| [`nexus-daw`](crates/nexus-daw) | binary (`nexus`) | The AI-first DAW application shell (stub for now). |
 
 ```
 nexus/
@@ -36,14 +37,13 @@ nexus/
 └── crates/
     ├── nexus-host/       # hosting engine (the foundation)
     ├── nexus-app/        # standalone host app (the 0.1 deliverable)
-    ├── nexus-wrap/       # plugin that wraps/hosts another plugin
-    └── nexus-daw/        # the DAW application
+    └── nexus-wrap/       # plugin that wraps/hosts another plugin
 ```
 
 > **Status:** 0.1 "Load & Hear" works on macOS — `nexus-app` scans the standard
 > plugin folders, loads CLAP and VST3 plugins, plays them through the default
 > audio output (hardware MIDI or the built-in virtual keyboard), opens their
-> editors, and saves/recalls presets. `nexus-wrap` and `nexus-daw` are stubs.
+> editors, and saves/recalls presets. `nexus-wrap` is a stub.
 
 ## Quickstart
 

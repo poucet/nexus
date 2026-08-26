@@ -7,10 +7,12 @@ architecture_updated: 2026-06-03
 
 # Nexus
 
-**Problem:** There is no Rust-native, AI-first environment for hosting VST3/CLAP
+**Problem:** There is no good Rust-native toolkit for hosting VST3/CLAP
 plugins. Nexus is built in layers so each layer is independently useful: a
-format-agnostic hosting **engine**, a **plugin that wraps another plugin** (load
-any wrapped plugin inside a DAW), and ultimately an **AI-first DAW**.
+format-agnostic hosting **engine**, a standalone **host app**, and a **plugin
+that wraps another plugin** (load any wrapped plugin inside a DAW). A
+longer-term direction is an **MCP interface** for inspecting and controlling a
+wrapped plugin's saved state.
 
 **Status: 0.1 — *Load & Hear* — is complete** (2026-08-26, tagged `v0.1.0`).
 `nexus-app` scans the macOS plugin folders Bitwig/Ableton use, lists every CLAP
@@ -22,12 +24,11 @@ saves/recalls presets. Scan failures are surfaced in the UI and cached. See
 
 **Key decisions (see [designs/ARCHITECTURE.md](designs/ARCHITECTURE.md)):**
 - The host engine (`nexus-host`) is UI-agnostic; plugin editors are native child
-  windows; the app UI is swappable. The DAW UI choice (egui vs web) is
-  deliberately deferred — nothing in 0.1 bets against a future web DAW.
+  windows; the app UI is swappable — nothing in 0.1 bets against a future
+  non-egui frontend.
 - The 0.1 UI is **egui** (single process, parents plugin editors directly),
   rendered via **wgpu/Metal** — plugin editors that run their own OpenGL clobber
-  a GL-based host renderer. The standalone host app lives in `nexus-app` so
-  `nexus-daw` stays reserved for the eventual (likely web) DAW.
+  a GL-based host renderer.
 - **Device I/O lives in `nexus-app`, not `nexus-host`.** The engine exposes a
   plugin's `AudioProcessor` for *someone else* to drive; the app owns CPAL,
   MIDI (`midir`), and the realtime callback. Essential because `nexus-wrap`
@@ -39,9 +40,8 @@ saves/recalls presets. Scan failures are surfaced in the UI and cached. See
   inner-editor frame, reused by `nexus-app` and later `nexus-wrap`. A
   **preset** captures plugin identity (format + id + path) + the inner
   plugin's opaque state via `save_state`/`load_state`.
-- Plugin stack mirrors the sibling `droplets` project: `clack` for CLAP
-  hosting; VST3 hosting via the pure-Rust `vst3` COM bindings; `clap-wrapper`
-  for VST3 *export* later.
+- Plugin stack: `clack` for CLAP hosting; VST3 hosting via the pure-Rust
+  `vst3` COM bindings; `clap-wrapper` for VST3 *export* later.
 - **Full plugin-aspect parity** is a committed goal: `nexus-host` drives, and
   `nexus-wrap` will forward, *every* plugin extension through one
   `PluginInstance` surface. 0.1 shipped full CLAP host-side parity; VST3 covers
@@ -59,8 +59,7 @@ saves/recalls presets. Scan failures are surfaced in the UI and cached. See
 - Cross-platform support (Windows/Linux discovery paths + editor windows; only
   macOS is implemented, other OSes `compile_error!`).
 - Plugin-state explorer: snapshot/diff plugin state to map bytes ↔ parameters,
-  toward driving plugins over MCP (the AI-first goal).
-- DAW UI spike (likely web) → `nexus-daw`.
+  toward driving plugins over MCP (the long-term goal).
 - Sandboxed/out-of-process probing so a plugin that crashes in its own
   initializer can't take the app down.
 
@@ -77,5 +76,4 @@ saves/recalls presets. Scan failures are surfaced in the UI and cached. See
 | `nexus-host` | lib | Discovery + format-agnostic hosting of CLAP/VST3 + preset model + *optional* egui wrapper UI (`ui` feature). **No device I/O.** | shipped in 0.1 |
 | `nexus-app` | bin | egui standalone host: CPAL audio + MIDI, realtime engine, device selection, plugin browser + editor windows | shipped in 0.1 |
 | `nexus-wrap` | cdylib | A plugin that hosts another plugin | stub |
-| `nexus-daw` | bin | The AI-first DAW (UI TBD, likely web) | stub |
 | `xtask` | bin | Build automation / bundling | — |

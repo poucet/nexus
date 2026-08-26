@@ -5,11 +5,11 @@
 
 ## Problem
 
-Nexus must host VST3 and CLAP plugins *and* eventually be a DAW. The DAW UI will
-likely be web (rich timeline/piano-roll/mixer tooling, designer-friendly), but
-plugin editors are fundamentally native and cannot live inside a webview. We
-need an architecture that ships a usable host now without betting against a
-future web DAW.
+Nexus must host VST3 and CLAP plugins behind a UI that can change: the first
+deliverable is a native egui app, but richer frontends (possibly web) may come
+later — and plugin editors are fundamentally native and cannot live inside a
+webview. We need an architecture that ships a usable host now without betting
+against a future non-native UI.
 
 ## The constraint that forces the design
 
@@ -47,10 +47,10 @@ Three layers, decoupled:
    host's `AudioProcessor` and feeds it MIDI; plus the egui UI, including
    **device selection** (audio in/out devices, MIDI sources). Also hosts the
    native plugin-window embedding (the child window the editor parents into) —
-   extract that to its own crate when a second UI (web DAW) needs it.
-3. **App UI** — swappable. MVP is **egui** (`nexus-app`). The DAW UI is decided
-   later and can be web (arrangement/mixer in web, editors as floating native
-   windows) while reusing layers 1 and 2.
+   extract that to its own crate when a second UI needs it.
+3. **App UI** — swappable. MVP is **egui** (`nexus-app`). A future frontend can
+   be web (main UI in web, editors as floating native windows) while reusing
+   layers 1 and 2.
 
 ### Why the wrapper UI lives in `nexus-host` (behind a feature)
 
@@ -63,7 +63,7 @@ To keep that from contradicting the device-/UI-agnostic goal, the wrapper UI is
 gated behind an opt-in **`ui` feature** (egui), off by default:
 
 - `nexus-app` / `nexus-wrap` build with `features = ["ui"]` → free chrome.
-- The bare library, and a future **web** `nexus-daw`, omit the feature → no egui.
+- The bare library, and any future web frontend, omit the feature → no egui.
 
 Device I/O is *not* given the same treatment — it stays out of `nexus-host`
 entirely (next section), because no consumer of the library wants hardware I/O
@@ -83,12 +83,7 @@ real devices.
 - One process: the host window can both list plugins and parent the editor, with
   no IPC.
 - It builds `nexus-host` and the embedding component, both reused regardless of
-  the eventual DAW UI — so no work is wasted.
-- egui is excellent for host/mixer/parameter surfaces. A full arrangement DAW in
-  egui is capable-but-laborious; that is exactly the call we defer, not make now.
-
-### Why `nexus-app` is separate from `nexus-daw`
-
-`nexus-daw` is reserved for the eventual DAW (likely web). The egui standalone
-host is its own crate so the two don't collide; the engine + embedding layers are
-the shared, durable parts.
+  any future frontend — so no work is wasted.
+- egui is excellent for host/mixer/parameter surfaces; anything richer is a
+  call we defer, not make now. The engine + embedding layers are the shared,
+  durable parts either way.

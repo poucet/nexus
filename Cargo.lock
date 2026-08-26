@@ -2707,14 +2707,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nexus-daw"
-version = "0.1.0"
-dependencies = [
- "log",
- "nexus-host",
-]
-
-[[package]]
 name = "nexus-host"
 version = "0.1.0"
 dependencies = [
