@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nexus Tools</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #16181d; --panel: #1e2129; --panel2: #23262f; --border: #32363f;
+    --text: #d6d9e0; --dim: #8a8f9c; --accent: #6aa1ff; --ok: #56c98d; --err: #e06c75;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  header .status { color: var(--dim); font-size: 12px; margin-left: auto; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 11px; cursor: pointer; font-size: 13px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #2b4a80; border-color: #3a5f9e; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #sidebar { width: 210px; border-right: 1px solid var(--border); overflow-y: auto; background: var(--panel); padding: 6px; }
+  #sidebar .tool { padding: 7px 9px; border-radius: 6px; cursor: pointer; font-family: var(--mono); font-size: 12.5px; }
+  #sidebar .tool:hover { background: var(--panel2); }
+  #sidebar .tool.active { background: #2b4a80; color: #fff; }
+  #request { width: 380px; border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 10px; gap: 8px; overflow-y: auto; }
+  #request .desc { color: var(--dim); font-size: 12.5px; white-space: pre-wrap; }
+  #request textarea { flex: 0 0 auto; min-height: 160px; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 12.5px; resize: vertical; }
+  #request details { font-size: 12px; color: var(--dim); }
+  #request pre { background: var(--panel2); border-radius: 6px; padding: 8px; overflow: auto; max-height: 240px; font-size: 11.5px; }
+  #response { flex: 1; overflow: auto; padding: 10px 14px; }
+  #response .meta { color: var(--dim); font-size: 12px; margin-bottom: 8px; }
+  #response .meta.ok { color: var(--ok); }
+  #response .meta.err { color: var(--err); }
+  .tree { font-family: var(--mono); font-size: 12.5px; }
+  .tree details { margin-left: 16px; }
+  .tree summary { cursor: pointer; color: var(--accent); }
+  .tree .kv { margin-left: 16px; }
+  .tree .k { color: #c678dd; }
+  .tree .s { color: #98c379; }
+  .tree .n { color: #d19a66; }
+  .tree .b { color: #56b6c2; }
+  .quick { display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Nexus Tools</h1>
+  <div class="quick">
+    <button onclick="quick('get_session', {})">Session</button>
+    <button onclick="quick('decode_state', {depth: 4})">Decode live</button>
+    <button onclick="quickSnapshot()">Snapshot</button>
+    <button onclick="quickDiff()" title="diff last snapshot vs live — turn a knob in the plugin first">Diff vs last snap</button>
+    <button onclick="quick('list_snapshots', {})">Snapshots</button>
+  </div>
+  <div class="status" id="status">loading tools…</div>
+</header>
+<main>
+  <nav id="sidebar"></nav>
+  <section id="request">
+    <div class="desc" id="tool-desc">Pick a tool.</div>
+    <textarea id="body" spellcheck="false">{}</textarea>
+    <div style="display:flex; gap:8px;">
+      <button class="primary" onclick="send()">Send</button>
+      <span style="color:var(--dim); font-size:12px; align-self:center;">⌘⏎ sends</span>
+    </div>
+    <details><summary>input schema</summary><pre id="schema-in"></pre></details>
+    <details><summary>output schema</summary><pre id="schema-out"></pre></details>
+  </section>
+  <section id="response">
+    <div class="meta" id="resp-meta">—</div>
+    <div class="tree" id="resp-tree"></div>
+  </section>
+</main>
+<script>
+let TOOLS = [];
+let current = null;
+let lastSnapshot = null;
+
+// Prefilled example bodies — friendlier than schema-derived skeletons.
+const EXAMPLES = {
+  get_session: {},
+  decode_state: { path: "", depth: 4 },
+  edit_state: { base_sha256: "<from decode_state>", edits: [{ path: "/settings/…", op: "set", value: 0.5 }], apply: false },
+  get_state: { include_data: false },
+  set_state: { base64: "<blob>" },
+  snapshot_state: { note: "", export: false },
+  restore_snapshot: { name: "snap-1" },
+  list_snapshots: {},
+  diff_state: { a: "snap-1" },
+  list_codecs: {},
+};
+
+async function init() {
+  const res = await fetch('/tools');
+  TOOLS = (await res.json()).tools;
+  const bar = document.getElementById('sidebar');
+  bar.innerHTML = '';
+  for (const t of TOOLS) {
+    const div = document.createElement('div');
+    div.className = 'tool';
+    div.textContent = t.name;
+    div.onclick = () => select(t.name);
+    div.id = 'tool-' + t.name;
+    bar.appendChild(div);
+  }
+  document.getElementById('status').textContent = TOOLS.length + ' tools';
+  select('get_session');
+}
+
+function select(name, body) {
+  current = TOOLS.find(t => t.name === name);
+  if (!current) return;
+  document.querySelectorAll('#sidebar .tool').forEach(e => e.classList.remove('active'));
+  document.getElementById('tool-' + name)?.classList.add('active');
+  document.getElementById('tool-desc').textContent = current.description;
+  document.getElementById('schema-in').textContent = JSON.stringify(current.input_schema, null, 2);
+  document.getElementById('schema-out').textContent = JSON.stringify(current.output_schema, null, 2);
+  const example = body ?? EXAMPLES[name] ?? {};
+  document.getElementById('body').value = JSON.stringify(example, null, 2);
+}
+
+async function invoke(name, body) {
+  const started = performance.now();
+  const res = await fetch('/tools/' + name, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const ms = Math.round(performance.now() - started);
+  let json;
+  try { json = await res.json(); } catch { json = { error: { code: 'internal', message: 'non-JSON response' } }; }
+  render(name, res.status, ms, json);
+  return { status: res.status, json };
+}
+
+function send() {
+  if (!current) return;
+  let body;
+  try { body = JSON.parse(document.getElementById('body').value || '{}'); }
+  catch (e) { render(current.name, 0, 0, { error: { code: 'invalid_input', message: 'request body: ' + e.message } }); return; }
+  invoke(current.name, body);
+}
+
+async function quick(name, body) { select(name, body); await invoke(name, body); }
+
+async function quickSnapshot() {
+  const { status, json } = await quick('snapshot_state', {});
+  if (status === 200 && json.name) { lastSnapshot = json.name; document.getElementById('status').textContent = 'last snapshot: ' + lastSnapshot; }
+}
+
+async function quickDiff() {
+  if (!lastSnapshot) { render('diff_state', 0, 0, { error: { code: 'not_found', message: 'no snapshot yet — click Snapshot first, then turn a knob in the plugin, then diff' } }); return; }
+  await quick('diff_state', { a: lastSnapshot });
+}
+
+function render(name, status, ms, json) {
+  const meta = document.getElementById('resp-meta');
+  const ok = status === 200;
+  meta.className = 'meta ' + (ok ? 'ok' : 'err');
+  meta.textContent = name + ' → ' + (status || 'client error') + ' (' + ms + ' ms)';
+  const tree = document.getElementById('resp-tree');
+  tree.innerHTML = '';
+  tree.appendChild(node(json, null, 0));
+  // Remember the base hash so edit_state examples are ready to go.
+  if (ok && json.base_sha256) {
+    EXAMPLES.edit_state.base_sha256 = json.base_sha256;
+    document.getElementById('status').textContent = 'base_sha256 captured for edit_state';
+  }
+}
+
+function node(value, key, depth) {
+  const wrap = document.createElement('div');
+  if (value !== null && typeof value === 'object') {
+    const entries = Array.isArray(value) ? value.map((v, i) => [i, v]) : Object.entries(value);
+    const details = document.createElement('details');
+    if (depth < 3) details.open = true;
+    const summary = document.createElement('summary');
+    summary.innerHTML = (key !== null ? '<span class="k">' + esc(String(key)) + '</span>: ' : '')
+      + (Array.isArray(value) ? '[' + entries.length + ']' : '{' + entries.length + '}');
+    details.appendChild(summary);
+    for (const [k, v] of entries) details.appendChild(node(v, k, depth + 1));
+    wrap.appendChild(details);
+  } else {
+    const div = document.createElement('div');
+    div.className = 'kv';
+    const cls = typeof value === 'string' ? 's' : typeof value === 'number' ? 'n' : 'b';
+    const shown = typeof value === 'string' ? '"' + esc(value) + '"' : esc(JSON.stringify(value));
+    div.innerHTML = (key !== null ? '<span class="k">' + esc(String(key)) + '</span>: ' : '') + '<span class="' + cls + '">' + shown + '</span>';
+    wrap.appendChild(div);
+  }
+  return wrap;
+}
+
+function esc(text) {
+  return String(text).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send();
+});
+
+init();
+</script>
+</body>
+</html>

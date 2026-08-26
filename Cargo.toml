@@ -14,6 +14,7 @@ rust-version = "1.90"
 # Internal crates
 nexus-host = { path = "crates/nexus-host" }
 nexus-tools = { path = "crates/nexus-tools" }
+nexus-rest = { path = "crates/nexus-rest" }
 
 # Shared third-party dependencies are pinned here so every crate in the
 # workspace resolves to the same version.
@@ -65,3 +66,8 @@ async-trait = "0.1"
 futures = "0.3"
 sha2 = "0.10"
 flate2 = "1"
+
+# nexus-rest: the human debug frontend (axum on its own thread + runtime).
+# Pins match droplets' known-working combination.
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "time"] }

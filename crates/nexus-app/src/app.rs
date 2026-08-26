@@ -68,8 +68,11 @@ impl NexusApp {
                     0 => String::new(),
                     n => format!(" ({n} bundle(s) failed to scan)"),
                 };
-                let status =
-                    format!("Ready — {} plugins{failed}. Use the Plugin menu.", catalog.len());
+                let status = format!(
+                    "Ready — {} plugins{failed}. Plugin menu loads; tools: http://127.0.0.1:{}/debug",
+                    catalog.len(),
+                    nexus_rest::port_from_env(),
+                );
                 (Some(engine), status)
             }
             Err(e) => (None, format!("Audio engine failed: {e}")),
@@ -82,6 +85,13 @@ impl NexusApp {
             move || waker_ctx.request_repaint(),
         ));
         let tools = std::sync::Arc::new(nexus_tools::ToolsService::new(tools_bridge));
+
+        // The REST frontend (debug UI) over the tool registry.
+        let registry = std::sync::Arc::new(nexus_tools::ToolRegistry::standard(
+            tools.clone() as std::sync::Arc<dyn nexus_tools::NexusTools>,
+        ));
+        let rest_port = nexus_rest::port_from_env();
+        nexus_rest::start_server(registry, rest_port);
 
         let selected_device = engine.as_ref().map(|e| e.output_device_name().to_string());
         Self {

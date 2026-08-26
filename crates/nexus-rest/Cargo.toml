@@ -1,0 +1,19 @@
+[package]
+name = "nexus-rest"
+description = "REST frontend + human debug UI over the nexus-tools registry."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nexus-tools.workspace = true
+axum.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true

@@ -32,8 +32,8 @@ The transport-agnostic trait, DTOs, registry, and main-thread bridge.
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| ⬜ | T13 | `crates/nexus-rest`: server bootstrap on own thread + tokio runtime (droplets pattern: OnceLock, loopback-only, dual 127.0.0.1+[::1] bind), `GET /tools`, `POST /tools/{name}`; port 9996 / `NEXUS_REST_PORT` | axum 0.7 pins from droplets |
-| ⬜ | T14 | `/debug` page (one inlined HTML+JS file): tool list, raw JSON request editor (schema shown for reference), collapsible response tree, one-click snapshot / diff-against-live | no generated forms in v1 |
+| ✅ | T13 | `crates/nexus-rest`: server bootstrap on own thread + tokio runtime (droplets pattern: OnceLock, loopback-only, dual 127.0.0.1+[::1] bind), `GET /tools`, `POST /tools/{name}`; port 9996 / `NEXUS_REST_PORT` | lib.rs — per-tool timeouts from `TimeoutClass` (5s/30s); error codes → HTTP status. **End-to-end tested over real sockets** (tests/http.rs: tools listing, empty-body default, 409/404/400 mapping, debug page). Wired into `nexus-app` (status line shows the URL). |
+| ✅ | T14 | `/debug` page (one inlined HTML+JS file): tool list, raw JSON request editor (schema shown for reference), collapsible response tree, one-click snapshot / diff-against-live | debug.html — quick-action bar (Session / Decode live / Snapshot / Diff vs last snap), per-tool example bodies, captures `base_sha256` from decode responses into the edit_state example, ⌘⏎ sends. Visual check = T15. |
 | ⬜ | T15 | Manual investigation pass: Vital, Serum 2, Arturia — snapshot → GUI knob → diff loop; export corpus; record per-plugin findings here | user-driven; findings feed F4/F6 |
 
 ## Feature 4: Codec expansion (driven by F3 findings)

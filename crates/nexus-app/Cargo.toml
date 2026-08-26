@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 nexus-host = { workspace = true }
 nexus-tools.workspace = true
+nexus-rest.workspace = true
 eframe.workspace = true
 egui.workspace = true
 cpal.workspace = true
