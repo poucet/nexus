@@ -118,7 +118,7 @@ both CLAP and VST3 views attach into it.
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| ⬜ | T23 | Full flow on macOS with real plugins: scan → browse → load (one CLAP **and** one VST3) → play via MIDI keyboard → editor opens and is interactive. Capture findings; note any plugin that misbehaves | manual verification; update `README.md` quickstart. |
+| 🔄 | T23 | Full flow on macOS with real plugins: scan → browse → load (one CLAP **and** one VST3) → play via MIDI keyboard → editor opens and is interactive. Capture findings; note any plugin that misbehaves | manual verification; update `README.md` quickstart. |
 | ⬜ | T24 | Error surfacing: scan/probe/load failures show in the UI and are skipped, never crash the app | `crates/nexus-app` + `nexus-host` error types. |
 
 ## Feature 15: Wrapper UI + presets (`nexus-host`, `ui` feature)
