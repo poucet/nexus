@@ -2,10 +2,11 @@
 
 use anyhow::Context;
 use cpal::traits::{DeviceTrait, HostTrait};
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender};
 use nexus_host::AudioProcessor;
 use nexus_host::process::{AudioBuffer, Event, EventBuffer, ProcessBlock};
 
+use super::ProcessorCommand;
 use super::midi::{MidiConsumer, MidiMessage};
 
 /// Largest block we promise a plugin; the CPAL callback is clamped to it.
@@ -24,7 +25,8 @@ pub struct OutputInfo {
 /// sending an `AudioProcessor` on `proc_rx`.
 pub fn build_output_stream(
     device_name: Option<&str>,
-    proc_rx: Receiver<Box<dyn AudioProcessor>>,
+    proc_rx: Receiver<ProcessorCommand>,
+    clear_ack: Sender<()>,
     mut midi: MidiConsumer,
     mut ui_midi: MidiConsumer,
 ) -> anyhow::Result<(cpal::Stream, OutputInfo)> {
@@ -68,12 +70,21 @@ pub fn build_output_stream(
         .build_output_stream(
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                // Swap in any newly-loaded plugin and start it.
-                while let Ok(mut processor) = proc_rx.try_recv() {
-                    if let Err(e) = processor.start_processing() {
-                        log::error!("start_processing: {e}");
+                // Swap in any newly-loaded plugin, or drop the active one (the
+                // ack tells the main thread the plugin is safe to tear down).
+                while let Ok(command) = proc_rx.try_recv() {
+                    match command {
+                        ProcessorCommand::Set(mut processor) => {
+                            if let Err(e) = processor.start_processing() {
+                                log::error!("start_processing: {e}");
+                            }
+                            current = Some(processor);
+                        }
+                        ProcessorCommand::Clear => {
+                            current = None;
+                            let _ = clear_ack.send(());
+                        }
                     }
-                    current = Some(processor);
                 }
 
                 let frames = (data.len() / channels).min(MAX_BLOCK);

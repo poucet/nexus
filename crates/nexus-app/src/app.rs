@@ -84,6 +84,9 @@ impl NexusApp {
             (Some(plugin), Some(instance)) => Preset::capture(&plugin, instance.as_mut()).ok(),
             _ => None,
         };
+        if let Some(engine) = &self.engine {
+            engine.clear_processor(); // audio thread lets go before teardown
+        }
         self.instance = None;
         self.engine = None; // drop the old stream first
 
@@ -108,6 +111,12 @@ impl NexusApp {
     fn play(&mut self, mut instance: Box<dyn PluginInstance>, label: String) {
         if let Some(old) = self.instance.as_mut() {
             old.close_editor();
+        }
+        // The audio thread must let go of the old processor before the old
+        // instance (dropped when `self.instance` is reassigned below) tears the
+        // plugin down under a running `process()`.
+        if let Some(engine) = &self.engine {
+            engine.clear_processor();
         }
 
         match &self.engine {
@@ -433,5 +442,18 @@ impl eframe::App for NexusApp {
 
         // Keep repainting so held keys track releases.
         ctx.request_repaint();
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // Ordered teardown: the stream may still run callbacks while this app
+        // is dropped, so close the editor, have the audio thread drop the
+        // processor (acknowledged), and only then drop the plugin instance.
+        if let Some(instance) = self.instance.as_mut() {
+            instance.close_editor();
+        }
+        if let Some(engine) = &self.engine {
+            engine.clear_processor();
+        }
+        self.instance = None;
     }
 }

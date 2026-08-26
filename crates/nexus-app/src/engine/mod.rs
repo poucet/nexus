@@ -7,12 +7,23 @@
 mod audio;
 mod midi;
 
+use std::time::Duration;
+
 use cpal::traits::{DeviceTrait, HostTrait};
-use crossbeam_channel::Sender;
+use crossbeam_channel::{Receiver, Sender};
 use nexus_host::AudioProcessor;
 use rtrb::Producer;
 
 pub use audio::OutputInfo;
+
+/// Commands handled by the audio callback between blocks.
+pub(crate) enum ProcessorCommand {
+    /// Install a new processor (the previous one is dropped on the audio thread).
+    Set(Box<dyn AudioProcessor>),
+    /// Drop the current processor and acknowledge, so the main thread knows the
+    /// audio thread no longer touches the plugin before tearing it down.
+    Clear,
+}
 
 /// Names of the available audio output devices.
 pub fn output_devices() -> Vec<String> {
@@ -26,7 +37,9 @@ pub fn output_devices() -> Vec<String> {
 pub struct Engine {
     _stream: cpal::Stream,
     _midi: Option<midi::MidiConnection>,
-    proc_tx: Sender<Box<dyn AudioProcessor>>,
+    proc_tx: Sender<ProcessorCommand>,
+    /// Signalled by the audio thread after it handles a [`ProcessorCommand::Clear`].
+    clear_ack: Receiver<()>,
     /// Producer for MIDI generated inside the app (the virtual keyboard).
     ui_midi: Producer<midi::MidiMessage>,
     output: OutputInfo,
@@ -42,18 +55,20 @@ impl Engine {
     /// Open a specific output device (by name, or the default) + MIDI input.
     pub fn start_with(device_name: Option<&str>) -> anyhow::Result<Self> {
         let (proc_tx, proc_rx) = crossbeam_channel::unbounded();
+        let (ack_tx, clear_ack) = crossbeam_channel::unbounded();
         let (midi_consumer, midi_conn) = midi::connect_default()?;
         let midi_name = midi_conn.as_ref().map(|c| c.name.clone());
 
         let (ui_producer, ui_consumer) = rtrb::RingBuffer::new(256);
         let (stream, output) =
-            audio::build_output_stream(device_name, proc_rx, midi_consumer, ui_consumer)?;
+            audio::build_output_stream(device_name, proc_rx, ack_tx, midi_consumer, ui_consumer)?;
         cpal::traits::StreamTrait::play(&stream)?;
 
         Ok(Self {
             _stream: stream,
             _midi: midi_conn,
             proc_tx,
+            clear_ack,
             ui_midi: ui_producer,
             output,
             midi_name,
@@ -91,6 +106,22 @@ impl Engine {
     /// Hand a freshly-activated plugin to the audio thread. The previous one is
     /// dropped on the audio thread once replaced.
     pub fn set_processor(&self, processor: Box<dyn AudioProcessor>) {
-        let _ = self.proc_tx.send(processor);
+        let _ = self.proc_tx.send(ProcessorCommand::Set(processor));
+    }
+
+    /// Drop the active processor on the audio thread and wait until it is gone,
+    /// so the caller may safely tear down the plugin behind it. The audio
+    /// callback can be mid-`process` when this is called — destroying the
+    /// plugin without this handshake segfaults (observed with VST3 on quit).
+    /// Times out (with a warning) if the stream isn't running callbacks.
+    pub fn clear_processor(&self) {
+        // Drain acks left over from an earlier clear that timed out.
+        while self.clear_ack.try_recv().is_ok() {}
+        if self.proc_tx.send(ProcessorCommand::Clear).is_err() {
+            return;
+        }
+        if self.clear_ack.recv_timeout(Duration::from_millis(500)).is_err() {
+            log::warn!("audio thread did not confirm processor teardown");
+        }
     }
 }
