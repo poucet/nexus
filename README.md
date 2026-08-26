@@ -72,10 +72,11 @@ cargo build   # build everything
 cargo test    # run tests
 ```
 
-### Bundling the plugin
+### Bundling plugin crates
 
 Plugin packaging is handled by the `xtask` helper, driven through cargo
-aliases (this mirrors the sibling `droplets` project):
+aliases. It applies to plugin crates — today that's `nexus-wrap`, which is
+still a stub:
 
 ```sh
 cargo bundle            # build + bundle CLAP and VST3 for this platform
@@ -87,30 +88,33 @@ cargo install-plugin    # build, bundle, and install into the user plugin dirs
 
 Bundles are written to `target/bundle/` and installed to the standard
 per-user locations (`~/Library/Audio/Plug-Ins/{CLAP,VST3}` on macOS, `~/.clap`
-and `~/.vst3` on Linux). The bundle name and identifiers come from a single
-`[package.metadata.bundle]` table in `crates/nexus-wrap/Cargo.toml`, read at
-bundle time via `cargo metadata` — there is no separate bundler config.
+and `~/.vst3` on Linux). The bundler is name-agnostic: any workspace crate
+with a `[package.metadata.bundle]` table and a `cdylib` target is bundled,
+discovered via `cargo metadata` — there is no separate bundler config.
 
-Building VST3 requires the Steinberg VST3 SDK; point `CLAP_WRAPPER_VST3_SDK`
-at your SDK checkout. The CLAP build needs no extra setup.
+Bundling as VST3 requires the Steinberg VST3 SDK; point
+`CLAP_WRAPPER_VST3_SDK` at your SDK checkout. (Only the *export* side needs
+it — VST3 *hosting* is pure Rust.) The CLAP build needs no extra setup.
 
-## Planned approach
+## Under the hood
 
-Nexus leans on the Rust audio-plugin ecosystem rather than reinventing it, and
-follows the same stack proven in the sibling `droplets` project:
+Nexus leans on the Rust audio-plugin ecosystem rather than reinventing it:
 
-- **CLAP, host + plugin** — [`clack`](https://github.com/prokopyl/clack) for
-  safe CLAP bindings. `clack` covers both sides, so `nexus-host` uses its host
-  API and `nexus-wrap` will use its plugin API.
+- **CLAP hosting** — [`clack`](https://github.com/prokopyl/clack) for safe
+  CLAP bindings. `clack` covers both sides, so `nexus-host` uses its host API
+  and `nexus-wrap` will use its plugin API.
 - **VST3 hosting** — the pure-Rust [`vst3`](https://crates.io/crates/vst3-sdk)
-  COM bindings (no Steinberg SDK checkout needed to *host*).
-- **VST3 export** — [`clap-wrapper`](https://github.com/blepfx/clap-wrapper-rs)
-  will wrap the CLAP `nexus-wrap` plugin as a VST3, so a single implementation
-  ships in both formats.
-- **Bundling** — a custom `xtask` builds the cdylib and lays it out into the
-  platform-specific `.clap`/`.vst3` bundle structures.
+  COM bindings (no Steinberg SDK checkout needed to host).
+- **Audio/MIDI I/O** — [`cpal`](https://github.com/rustaudio/cpal) output and
+  [`midir`](https://github.com/Boddlnagg/midir) input live in `nexus-app`;
+  the `nexus-host` library has no device I/O at all.
+- **UI** — [`egui`](https://github.com/emilk/egui)/`eframe` on the wgpu
+  (Metal) renderer; plugin editors are native child windows.
+- **VST3 export (planned)** —
+  [`clap-wrapper`](https://github.com/blepfx/clap-wrapper-rs) will wrap the
+  CLAP `nexus-wrap` plugin as a VST3, so a single implementation ships in
+  both formats.
 
 ## License
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
-[MIT license](LICENSE-MIT) at your option.
+Licensed under the [MIT license](LICENSE).
