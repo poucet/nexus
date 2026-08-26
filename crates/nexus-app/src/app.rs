@@ -17,16 +17,16 @@ pub struct NexusApp {
     host: Host,
     menu: AppMenu,
     keyboard: VirtualKeyboard,
-    engine: Option<Engine>,
+    pub(crate) engine: Option<Engine>,
     /// Available audio output devices, and the selected one.
     devices: Vec<String>,
     selected_device: Option<String>,
     /// Whether the Settings dialog is open.
     settings_open: bool,
     /// The currently-loaded plugin (main-thread side), kept for state/editor.
-    instance: Option<Box<dyn PluginInstance>>,
+    pub(crate) instance: Option<Box<dyn PluginInstance>>,
     /// Which catalog entry is loaded (for presets / display).
-    loaded: Option<PluginRef>,
+    pub(crate) loaded: Option<PluginRef>,
     status: String,
     /// All discovered plugins, for the searchable finder palette.
     plugins: Vec<PluginRef>,
@@ -35,6 +35,12 @@ pub struct NexusApp {
     /// Whether the finder palette is open, and its current filter text.
     finder_open: bool,
     finder_query: String,
+    /// Requests from the tools service (state/snapshot/diff…), drained on the
+    /// main thread each frame.
+    tools_rx: crossbeam_channel::Receiver<nexus_tools::HostRequest>,
+    /// The tools service itself; the REST debug frontend (F3) consumes it.
+    #[allow(dead_code)]
+    pub(crate) tools: std::sync::Arc<nexus_tools::ToolsService>,
 }
 
 impl NexusApp {
@@ -69,6 +75,14 @@ impl NexusApp {
             Err(e) => (None, format!("Audio engine failed: {e}")),
         };
 
+        // Tools bridge: requests marshal onto this (main) thread; the waker
+        // repaints so a request is serviced within a frame even when idle.
+        let waker_ctx = cc.egui_ctx.clone();
+        let (tools_bridge, tools_rx) = nexus_tools::HostBridge::channel(std::sync::Arc::new(
+            move || waker_ctx.request_repaint(),
+        ));
+        let tools = std::sync::Arc::new(nexus_tools::ToolsService::new(tools_bridge));
+
         let selected_device = engine.as_ref().map(|e| e.output_device_name().to_string());
         Self {
             host: Host::new(),
@@ -85,6 +99,8 @@ impl NexusApp {
             scan_failures,
             finder_open: false,
             finder_query: String::new(),
+            tools_rx,
+            tools,
         }
     }
 
@@ -367,6 +383,11 @@ impl NexusApp {
 
 impl eframe::App for NexusApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Serve tool requests first — the single main-thread drain point that
+        // also serializes tool operations against the plugin.
+        let tools_rx = self.tools_rx.clone();
+        nexus_tools::drain(&tools_rx, self);
+
         let menu_actions = self.menu.poll();
 
         egui::TopBottomPanel::top("nexus-status").show(ctx, |ui| {

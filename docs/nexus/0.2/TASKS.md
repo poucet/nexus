@@ -10,23 +10,23 @@ The transport-agnostic trait, DTOs, registry, and main-thread bridge.
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| ⬜ | T1 | `crates/nexus-tools` scaffold: crate, workspace entry, `ToolError { code, message }`, deps (serde, serde_json, schemars, async-trait, crossbeam-channel, futures, base64, sha2, flate2, log, nexus-host) | no tokio/axum in this crate |
-| ⬜ | T2 | `NexusTools` trait core (get_session, decode_state, edit_state, get/set_state, snapshot_state/restore/list, diff_state, list_codecs) + DTOs with JsonSchema; `instance:"default"` on every request | v1 rejects instance ≠ "default" |
-| ⬜ | T3 | Main-thread bridge: `ToolRequest` enum + futures oneshot replies + crossbeam channel + `drain(rx, &mut impl MainThreadHost)` + waker hook; timeouts (5s / 30s load-class) | MockHost round-trip tests, no plugins needed |
-| ⬜ | T4 | Hand-written tool registry: `ToolDef { name, description, input/output schema, handler }` + dispatch; no macro in v1 | schema generation tests |
-| ⬜ | T5 | `nexus-app` wiring: `tools_host.rs` implements `MainThreadHost` (state ops on the loaded `PluginInstance`), drain at top of `update()`, repaint waker | reuses existing teardown handshake |
+| ✅ | T1 | `crates/nexus-tools` scaffold: crate, workspace entry, `ToolError { code, message }`, deps (serde, serde_json, schemars, async-trait, crossbeam-channel, futures, base64, sha2, flate2, log, nexus-host) | `crates/nexus-tools/` — error.rs (`ErrorCode` + actionable messages). No tokio/axum. |
+| ✅ | T2 | `NexusTools` trait core (get_session, decode_state, edit_state, get/set_state, snapshot_state/restore/list, diff_state, list_codecs) + DTOs with JsonSchema; `instance:"default"` on every request | tools.rs + types.rs — 10 methods; requests reject instance ≠ "default". |
+| ✅ | T3 | Main-thread bridge: `HostRequest` enum + futures oneshot replies + crossbeam channel + `drain(rx, &mut impl MainThreadHost)` + waker hook | bridge.rs — `MainThreadHost` is the small sync trait apps implement; timeouts are the frontend's job (`TimeoutClass` on each ToolDef). Service tests marshal through a real bridge + MockHost thread. |
+| ✅ | T4 | Hand-written tool registry: `ToolDef { name, description, input/output schema, handler }` + dispatch; no macro in v1 | registry.rs — local `tool!` macro_rules builds entries; `descriptors()` feeds GET /tools. 4 tests. |
+| ✅ | T5 | `nexus-app` wiring: `tools_host.rs` implements `MainThreadHost` (state ops on the loaded `PluginInstance`), drain at top of `update()`, repaint waker | `crates/nexus-app/src/tools_host.rs`; app holds `Arc<ToolsService>` for the F3 REST server. Compile-verified. |
 
 ## Feature 2: State, snapshots & codecs
 
 | Done | # | Task | Files / notes |
 |------|---|------|---------------|
-| ⬜ | T6 | get_state/set_state: sha256, size, base64 opt-in with `max_bytes` cap; set_state auto-snapshots prior state | |
-| ⬜ | T7 | Snapshot store (in-memory, 32 / 256 MB LRU) + on-disk corpus export (`.../Nexus/state-corpus/<plugin_id>/<name>.state` + JSON sidecar) + list/restore | corpus survives restarts; feeds codec tests |
-| ⬜ | T8 | `StateCodec` trait + ordered registry + confidence selection + list_codecs | in-tree `codecs/` module |
-| ⬜ | T9 | `generic` sniff codec (decode-only): gzip/zlib recurse, RIFF walk, VST3 chunk-list framing, JSON/XML detection (whole + at-offset), binary leaves (entropy/strings/hexdump); depth + 32MB caps | synthetic fixture tests |
-| ⬜ | T10 | `vital-json` codec (decode+encode) | `decode(encode(doc)) == doc` round-trip tests |
-| ⬜ | T11 | Shared edit application (JSON-pointer ops on the decoded doc) + `edit_state`: `base_sha256` guard, dry-run, auto-snapshot, through-the-plugin verify (load → re-save → re-decode → compare edited paths) | the TOCTOU + verification core |
-| ⬜ | T12 | `diff_state(a, b=live)`: doc-level structural diff, byte-range fallback for binary leaves | synthetic doc tests |
+| ✅ | T6 | get_state/set_state: sha256, size, base64 opt-in with `max_bytes` cap; set_state auto-snapshots prior state | service.rs — set_state re-saves after load (proves the plugin accepted it; reports normalized state). |
+| ✅ | T7 | Snapshot store (in-memory, 32 / 256 MB LRU) + on-disk corpus export (`.../Nexus/state-corpus/<plugin_id>/<name>.state` + JSON sidecar) + list/restore | snapshots.rs — LRU tests; export is best-effort-tested via real use (writes under $HOME). restore rejects plugin-id mismatch (Conflict). |
+| ✅ | T8 | `StateCodec` trait + ordered registry + confidence selection + list_codecs | codec.rs — highest confidence wins; `CodecRegistry::standard()` is the one registration point. |
+| ✅ | T9 | `generic` sniff codec (decode-only): gzip/zlib recurse, RIFF walk, VST3-preset framing, JSON/XML detection (whole + at-offset), binary leaves (entropy/strings/hexdump); depth + 32MB caps | codecs/generic.rs — 7 fixture tests (gzip-wrapped JSON, XML histogram, RIFF chunks, noise entropy, embedded JSON at offset, string extraction). |
+| ✅ | T10 | `vital-json` codec (decode+encode) | codecs/vital.rs — matches Vital-named plugins with JSON state (confidence 220); round-trip test. |
+| ✅ | T11 | Shared edit application (JSON-pointer ops on the decoded doc) + `edit_state`: `base_sha256` guard, dry-run, auto-snapshot, through-the-plugin verify (load → re-save → re-decode → compare edited paths) | codec.rs (`apply_edits`, RFC 6901 incl. escapes + array append) + service.rs; float-tolerant verification. Full-flow test: dry-run → apply → verified → stale-hash Conflict → auto-snapshot restore. |
+| ✅ | T12 | `diff_state(a, b=live)`: doc-level structural diff (byte info stays in the generic codec's binary leaves) | diff.rs — changed/added/removed with escaped pointer paths, big values summarized, 500-change cap. 5 tests. |
 
 ## Feature 3: REST + debug UI (`nexus-rest`) — investigation starts here
 

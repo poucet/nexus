@@ -5,6 +5,7 @@ mod app;
 mod engine;
 mod keyboard;
 mod menu;
+mod tools_host;
 
 use app::NexusApp;
 
