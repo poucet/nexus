@@ -5,6 +5,7 @@
 //! instantiation, processing, and per-aspect extensions
 //! (see [`PLUGIN_EXTENSIONS.md`](../../../docs/design/PLUGIN_EXTENSIONS.md)).
 
+#[cfg(target_os = "macos")]
 pub mod gui;
 pub mod host;
 pub mod info;

@@ -1,28 +1,15 @@
-//! macOS plugin search paths.
+//! Plugin search paths.
 //!
-//! These mirror the standard CLAP/VST3 locations that Bitwig, Ableton, and
-//! other hosts scan on macOS. Each format has a user-scope directory under the
-//! user's `~/Library` and a system-scope directory under `/Library`.
-//!
-//! This module is macOS-only for the 0.1 MVP; Windows and Linux search paths
-//! are a later-phase feature.
+//! These mirror the standard CLAP/VST3 locations that Bitwig, Reaper, Ableton, and
+//! other hosts scan on macOS and Linux. Each format has a user-scope directory
+//! and system-scope directories.
 
 use std::path::{Path, PathBuf};
 
 use crate::PluginFormat;
 use crate::discovery::config::{self, Config};
 
-/// macOS subdirectory under `Library/Audio/Plug-Ins/` for each format.
-impl PluginFormat {
-    fn plugin_subdir(self) -> &'static str {
-        match self {
-            PluginFormat::Clap => "CLAP",
-            PluginFormat::Vst3 => "VST3",
-        }
-    }
-}
-
-/// Search directories for `format`: the standard macOS locations followed by
+/// Search directories for `format`: the standard platform locations followed by
 /// any custom directories from the user's config (see [`config`]). Order is
 /// most-specific first — user scope, system scope, then config dirs in the
 /// order listed — with duplicates removed.
@@ -44,15 +31,53 @@ fn search_paths_with(home: Option<&Path>, config: &Config, format: PluginFormat)
     dedup_preserving_order(paths)
 }
 
-/// The standard macOS directories for `format`, user scope before system scope.
+/// The standard platform directories for `format`, user scope before system scope.
 /// A `None` home omits the user-scope directory.
 fn default_search_paths(home: Option<&Path>, format: PluginFormat) -> Vec<PathBuf> {
-    let subdir = format.plugin_subdir();
+    #[cfg(target_os = "macos")]
+    {
+        macos_default_search_paths(home, format)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux_default_search_paths(home, format)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        linux_default_search_paths(home, format)
+    }
+}
+
+/// The standard macOS directories for `format`, user scope before system scope.
+#[allow(dead_code)]
+pub(crate) fn macos_default_search_paths(home: Option<&Path>, format: PluginFormat) -> Vec<PathBuf> {
+    let subdir = match format {
+        PluginFormat::Clap => "CLAP",
+        PluginFormat::Vst3 => "VST3",
+    };
     let mut paths = Vec::with_capacity(2);
     if let Some(home) = home {
         paths.push(home.join("Library/Audio/Plug-Ins").join(subdir));
     }
     paths.push(Path::new("/Library/Audio/Plug-Ins").join(subdir));
+    paths
+}
+
+/// The standard Linux directories for `format`, user scope before system scope:
+/// - CLAP: User `~/.clap`, System `/usr/lib/clap`, `/usr/local/lib/clap`
+/// - VST3: User `~/.vst3`, System `/usr/lib/vst3`, `/usr/local/lib/vst3`
+#[allow(dead_code)]
+pub(crate) fn linux_default_search_paths(home: Option<&Path>, format: PluginFormat) -> Vec<PathBuf> {
+    let mut paths = Vec::with_capacity(3);
+    let (user_dir, sys_dir) = match format {
+        PluginFormat::Clap => (".clap", "clap"),
+        PluginFormat::Vst3 => (".vst3", "vst3"),
+    };
+    if let Some(home) = home {
+        paths.push(home.join(user_dir));
+    }
+    paths.push(PathBuf::from(format!("/usr/lib/{sys_dir}")));
+    paths.push(PathBuf::from(format!("/usr/local/lib/{sys_dir}")));
     paths
 }
 
@@ -77,9 +102,9 @@ mod tests {
     }
 
     #[test]
-    fn user_scope_comes_before_system_scope() {
+    fn macos_user_scope_comes_before_system_scope() {
         let home = PathBuf::from("/Users/test");
-        let paths = default_search_paths(Some(&home), PluginFormat::Clap);
+        let paths = macos_default_search_paths(Some(&home), PluginFormat::Clap);
         assert_eq!(
             paths,
             vec![
@@ -90,18 +115,58 @@ mod tests {
     }
 
     #[test]
-    fn each_format_uses_its_own_subdir() {
+    fn macos_each_format_uses_its_own_subdir() {
         let home = PathBuf::from("/Users/test");
-        let clap = default_search_paths(Some(&home), PluginFormat::Clap);
-        let vst3 = default_search_paths(Some(&home), PluginFormat::Vst3);
+        let clap = macos_default_search_paths(Some(&home), PluginFormat::Clap);
+        let vst3 = macos_default_search_paths(Some(&home), PluginFormat::Vst3);
         assert!(clap.iter().all(|p| p.ends_with("CLAP")));
         assert!(vst3.iter().all(|p| p.ends_with("VST3")));
     }
 
     #[test]
-    fn missing_home_drops_user_scope() {
-        let paths = default_search_paths(None, PluginFormat::Vst3);
+    fn macos_missing_home_drops_user_scope() {
+        let paths = macos_default_search_paths(None, PluginFormat::Vst3);
         assert_eq!(paths, vec![PathBuf::from("/Library/Audio/Plug-Ins/VST3")]);
+    }
+
+    #[test]
+    fn linux_clap_paths() {
+        let home = PathBuf::from("/home/test");
+        let paths = linux_default_search_paths(Some(&home), PluginFormat::Clap);
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/home/test/.clap"),
+                PathBuf::from("/usr/lib/clap"),
+                PathBuf::from("/usr/local/lib/clap"),
+            ]
+        );
+    }
+
+    #[test]
+    fn linux_vst3_paths() {
+        let home = PathBuf::from("/home/test");
+        let paths = linux_default_search_paths(Some(&home), PluginFormat::Vst3);
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/home/test/.vst3"),
+                PathBuf::from("/usr/lib/vst3"),
+                PathBuf::from("/usr/local/lib/vst3"),
+            ]
+        );
+    }
+
+    #[test]
+    fn linux_missing_home_drops_user_scope() {
+        let paths = linux_default_search_paths(None, PluginFormat::Vst3);
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/usr/lib/vst3"),
+                PathBuf::from("/usr/local/lib/vst3"),
+            ]
+        );
     }
 
     #[test]
@@ -109,28 +174,20 @@ mod tests {
         let home = PathBuf::from("/Users/test");
         let config = config_with(&["~/Extra/CLAP", "/Volumes/Audio/CLAP"], &[]);
         let paths = search_paths_with(Some(&home), &config, PluginFormat::Clap);
-        assert_eq!(
-            paths,
-            vec![
-                PathBuf::from("/Users/test/Library/Audio/Plug-Ins/CLAP"),
-                PathBuf::from("/Library/Audio/Plug-Ins/CLAP"),
-                PathBuf::from("/Users/test/Extra/CLAP"),
-                PathBuf::from("/Volumes/Audio/CLAP"),
-            ]
-        );
+        let defaults = default_search_paths(Some(&home), PluginFormat::Clap);
+        let mut expected = defaults;
+        expected.push(PathBuf::from("/Users/test/Extra/CLAP"));
+        expected.push(PathBuf::from("/Volumes/Audio/CLAP"));
+        assert_eq!(paths, expected);
     }
 
     #[test]
     fn config_dir_duplicating_a_default_is_deduped() {
         let home = PathBuf::from("/Users/test");
-        let config = config_with(&["~/Library/Audio/Plug-Ins/CLAP"], &[]);
+        let defaults = default_search_paths(Some(&home), PluginFormat::Clap);
+        let first_default = defaults[0].to_str().unwrap();
+        let config = config_with(&[first_default], &[]);
         let paths = search_paths_with(Some(&home), &config, PluginFormat::Clap);
-        assert_eq!(
-            paths,
-            vec![
-                PathBuf::from("/Users/test/Library/Audio/Plug-Ins/CLAP"),
-                PathBuf::from("/Library/Audio/Plug-Ins/CLAP"),
-            ]
-        );
+        assert_eq!(paths, defaults);
     }
 }

@@ -99,16 +99,15 @@ mod macos;
 #[cfg(target_os = "macos")]
 use macos as platform;
 
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+use linux as platform;
+
 #[cfg(target_os = "windows")]
 compile_error!(
     "vst3::module: Windows loading not implemented yet — LoadLibrary the \
      Contents/x86_64-win DLL, run InitDll in LoadedModule::init, GetPluginFactory."
-);
-
-#[cfg(target_os = "linux")]
-compile_error!(
-    "vst3::module: Linux loading not implemented yet — dlopen the \
-     Contents/x86_64-linux .so, run ModuleEntry in LoadedModule::init, GetPluginFactory."
 );
 
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]

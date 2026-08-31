@@ -12,6 +12,7 @@ use std::path::Path;
 use clack_host::prelude::*;
 use crossbeam_channel::{Receiver, unbounded};
 
+#[cfg(target_os = "macos")]
 use crate::clap::gui::ClapEditor;
 use crate::clap::host::{
     MainThreadMessage, NexusHost, NexusHostMainThread, NexusHostShared, host_info,
@@ -29,6 +30,7 @@ pub struct ClapPluginInstance {
     /// Drains main-thread callback requests posted by the plugin.
     messages: Receiver<MainThreadMessage>,
     /// The plugin's floating editor window, if open.
+    #[cfg(target_os = "macos")]
     editor: Option<ClapEditor>,
     /// Parameter change ring producer, created on activate.
     param_producer: Option<rtrb::Producer<crate::host::ParamChange>>,
@@ -60,6 +62,7 @@ impl ClapPluginInstance {
             _entry: entry,
             instance,
             messages: receiver,
+            #[cfg(target_os = "macos")]
             editor: None,
             param_producer: None,
         })
@@ -150,16 +153,28 @@ impl HostPluginInstance for ClapPluginInstance {
     }
 
     fn open_editor(&mut self) -> Result<(), HostError> {
-        if self.editor.is_some() {
-            return Ok(());
+        #[cfg(target_os = "macos")]
+        {
+            if self.editor.is_some() {
+                return Ok(());
+            }
+            self.editor = Some(ClapEditor::open(&mut self.instance)?);
+            Ok(())
         }
-        self.editor = Some(ClapEditor::open(&mut self.instance)?);
-        Ok(())
+        #[cfg(not(target_os = "macos"))]
+        {
+            Err(HostError::Load(
+                "GUI editor embedding is not supported on this platform".into(),
+            ))
+        }
     }
 
     fn close_editor(&mut self) {
-        if let Some(editor) = self.editor.take() {
-            editor.destroy(&mut self.instance);
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(editor) = self.editor.take() {
+                editor.destroy(&mut self.instance);
+            }
         }
     }
 
@@ -167,6 +182,7 @@ impl HostPluginInstance for ClapPluginInstance {
         // Service whatever the plugin asked the main thread to do (drives the
         // editor: callbacks, resize, close).
         let mut run_callback = false;
+        #[allow(unused_mut)]
         let mut closed = false;
         while let Ok(message) = self.messages.try_recv() {
             match message {
@@ -179,6 +195,7 @@ impl HostPluginInstance for ClapPluginInstance {
             }
         }
 
+        #[cfg(target_os = "macos")]
         if closed {
             self.close_editor();
         } else if let Some(editor) = self.editor.as_ref() {

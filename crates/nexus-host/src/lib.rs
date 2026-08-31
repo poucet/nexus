@@ -13,6 +13,7 @@ pub mod clap;
 pub mod discovery;
 /// A native window that hosts a plugin's editor view (shared by the CLAP and
 /// VST3 backends).
+#[cfg(target_os = "macos")]
 pub mod editor_window;
 pub use simply_fugue as fugue;
 pub mod host;

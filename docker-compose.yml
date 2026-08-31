@@ -1,0 +1,27 @@
+services:
+  nexus-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: nexus-mcp
+    restart: unless-stopped
+    ports:
+      - "9997:9997"
+    environment:
+      - RUST_LOG=info
+    volumes:
+      # Optional: Mount host plugin directories into the container for discovery
+      - ./plugins/clap:/root/.clap:ro
+      - ./plugins/vst3:/root/.vst3:ro
+      - ./plugins/system-clap:/usr/lib/clap:ro
+      - ./plugins/system-vst3:/usr/lib/vst3:ro
+    command: ["--port", "9997"]
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    container_name: nexus-test
+    command: ["cargo", "test", "--workspace"]

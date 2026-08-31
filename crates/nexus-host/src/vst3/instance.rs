@@ -18,6 +18,7 @@ use vst3_sdk::Steinberg::{FUnknown, IBStream, IPluginBaseTrait, TUID, kResultOk}
 use vst3_sdk::{ComPtr, ComWrapper};
 
 use crate::host::{AudioConfig, AudioProcessor, HostError, PluginInstance};
+#[cfg(target_os = "macos")]
 use crate::vst3::editor::Vst3Editor;
 use crate::vst3::host_app::Vst3HostApp;
 use crate::vst3::module::{Vst3Factory, Vst3Module};
@@ -28,6 +29,7 @@ use crate::vst3::state::HostStream;
 pub struct Vst3PluginInstance {
     /// The plugin's editor, if open. Declared first so its view is released
     /// before the component/controller it came from.
+    #[cfg(target_os = "macos")]
     editor: Option<Vst3Editor>,
     component: ComPtr<IComponent>,
     processor: ComPtr<IAudioProcessor>,
@@ -69,6 +71,7 @@ impl Vst3PluginInstance {
         let controller = unsafe { setup_controller(&module, &component, ctx.as_ptr()) };
 
         Ok(Self {
+            #[cfg(target_os = "macos")]
             editor: None,
             component,
             processor,
@@ -220,20 +223,32 @@ impl PluginInstance for Vst3PluginInstance {
     }
 
     fn open_editor(&mut self) -> Result<(), HostError> {
-        if self.editor.is_some() {
-            return Ok(());
+        #[cfg(target_os = "macos")]
+        {
+            if self.editor.is_some() {
+                return Ok(());
+            }
+            let controller = self
+                .controller
+                .as_ref()
+                .ok_or_else(|| HostError::Load("plugin has no edit controller".into()))?;
+            self.editor = Some(Vst3Editor::open(controller, "Nexus — Plugin")?);
+            Ok(())
         }
-        let controller = self
-            .controller
-            .as_ref()
-            .ok_or_else(|| HostError::Load("plugin has no edit controller".into()))?;
-        self.editor = Some(Vst3Editor::open(controller, "Nexus — Plugin")?);
-        Ok(())
+        #[cfg(not(target_os = "macos"))]
+        {
+            Err(HostError::Load(
+                "GUI editor embedding is not supported on this platform".into(),
+            ))
+        }
     }
 
     fn close_editor(&mut self) {
-        if let Some(editor) = self.editor.take() {
-            editor.close();
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(editor) = self.editor.take() {
+                editor.close();
+            }
         }
     }
 
