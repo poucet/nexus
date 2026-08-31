@@ -123,7 +123,7 @@ Today `Event::ParamValue` is silently dropped by both backends and `set_param` d
 
 ## Phasing
 
-Tracked in `docs/nexus/0.2/TASKS.md` (created as step 0, together with a ROADMAP stub and the PROJECT.md frontmatter bump to version 0.2). **State first — the investigation loop starts as early as possible; param plumbing follows it.**
+Tracked in @docs/ops/BOARD.md and @docs/ops/ROADMAP.md. **State first — the investigation loop starts as early as possible; param plumbing follows it.**
 
 - **F1 Tools core** — nexus-tools: trait core, DTOs, ToolError, hand-written registry, main-thread bridge; MockHost round-trip tests.
 - **F2 State, snapshots & codecs** — get/set_state, snapshot store + corpus export, `StateCodec` trait/registry, generic sniff codec (+ fixtures), vital-json codec (+ round-trip tests), doc-level diff, edit_state with baseline guard / dry-run / through-the-plugin verify / auto-snapshot.

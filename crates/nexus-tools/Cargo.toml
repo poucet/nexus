@@ -1,6 +1,6 @@
 [package]
 name = "nexus-tools"
-description = "Transport-agnostic tool surface for structured access to plugin state (see designs/STATE_TOOLS.md)."
+description = "Transport-agnostic tool surface for structured access to plugin state (see docs/design/STATE_TOOLS.md)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

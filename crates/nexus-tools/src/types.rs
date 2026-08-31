@@ -1,6 +1,6 @@
 //! Request/response DTOs for the tool surface.
 //!
-//! Conventions (see designs/STATE_TOOLS.md): every request carries
+//! Conventions (see docs/design/STATE_TOOLS.md): every request carries
 //! `instance: "default"` so a multi-instance future doesn't break the contract;
 //! every response is an object wrapper (never a bare array); values are JSON.
 

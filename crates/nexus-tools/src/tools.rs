@@ -2,7 +2,7 @@
 //!
 //! Frontends (REST now, MCP later, gRPC if wanted) are thin consumers of this
 //! trait via the [`crate::registry::ToolRegistry`] — none of them defines the
-//! contract. See designs/STATE_TOOLS.md for what is deliberately NOT here yet
+//! contract. See docs/design/STATE_TOOLS.md for what is deliberately NOT here yet
 //! (params, presets, catalog): those land once manual investigation through
 //! the debug UI demands them.
 

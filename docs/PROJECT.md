@@ -14,7 +14,7 @@ that wraps another plugin** (load any wrapped plugin inside a DAW). A
 longer-term direction is an **MCP interface** for inspecting and controlling a
 wrapped plugin's saved state.
 
-**Current focus: 0.2 — *State tools*** — structured, transport-agnostic access to a loaded plugin's stored state (extensible per-plugin codecs, snapshot→tweak→diff investigation loop, REST debug UI first, MCP last). Design: [designs/STATE_TOOLS.md](designs/STATE_TOOLS.md); tasks: [nexus/0.2/TASKS.md](nexus/0.2/TASKS.md).
+**Current focus: 0.2 — *State tools*** — structured, transport-agnostic access to a loaded plugin's stored state (extensible per-plugin codecs, snapshot→tweak→diff investigation loop, REST debug UI first, MCP last). Design: [design/STATE_TOOLS.md](design/STATE_TOOLS.md); board: [ops/BOARD.md](ops/BOARD.md).
 
 **0.1 — *Load & Hear* — is complete** (2026-08-26, tagged `v0.1.0`).
 `nexus-app` scans the macOS plugin folders Bitwig/Ableton use, lists every CLAP
@@ -23,7 +23,7 @@ built-in virtual keyboard), opens its editor in a native window, and
 saves/recalls presets. Scan failures are surfaced in the UI and cached. See
 `README.md` for the quickstart.
 
-**Key decisions (see [designs/ARCHITECTURE.md](designs/ARCHITECTURE.md)):**
+**Key decisions (see [design/ARCHITECTURE.md](design/ARCHITECTURE.md)):**
 - The host engine (`nexus-host`) is UI-agnostic; plugin editors are native child
   windows; the app UI is swappable — nothing in 0.1 bets against a future
   non-egui frontend.
@@ -47,7 +47,7 @@ saves/recalls presets. Scan failures are surfaced in the UI and cached. See
   `nexus-wrap` will forward, *every* plugin extension through one
   `PluginInstance` surface. 0.1 shipped full CLAP host-side parity; VST3 covers
   load/process/params/state/GUI. See
-  [designs/PLUGIN_EXTENSIONS.md](designs/PLUGIN_EXTENSIONS.md).
+  [design/PLUGIN_EXTENSIONS.md](design/PLUGIN_EXTENSIONS.md).
 
 **Backlog (unscheduled, carried from the 0.1 roadmap):**
 - `nexus-wrap`: ship the host as a CLAP/VST3 plugin, forwarding the full

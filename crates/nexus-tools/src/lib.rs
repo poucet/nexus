@@ -1,5 +1,5 @@
 //! nexus-tools: the transport-agnostic tool surface for structured access to a
-//! hosted plugin's stored state (design: docs/designs/STATE_TOOLS.md).
+//! hosted plugin's stored state (design: docs/design/STATE_TOOLS.md).
 //!
 //! - [`NexusTools`] — the async trait every frontend (REST, later MCP) consumes.
 //! - [`ToolsService`] — its canonical implementation: main-thread bridge +
