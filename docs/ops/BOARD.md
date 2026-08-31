@@ -54,13 +54,13 @@ Investigation starts here.
 | ⬜ | T16 | `CODEC-SERUM2` | `serum2` codec (decode-first) | from corpus |
 | ⬜ | T17 | `CODEC-ARTURIA` | `arturia` codec (decode-first) | from corpus |
 
-#### Feature 5: Param-set plumbing (`nexus-host`) — ⬜ Queued
+#### Feature 5: Param-set plumbing (`nexus-host`) — ✅ Landed
 
 | St | # | Label | Task | Files / notes |
 |---|---|---|---|---|
-| ⬜ | T18 | `PARAM-HOST` | `PluginInstance::set_param` + `param_text_to_value`; `ParamInfo: Serialize`; per-instance `rtrb` ParamChange ring created at `activate()` | design in STATE_TOOLS.md |
-| ⬜ | T19 | `PARAM-CLAP` | CLAP: ring drain → `ParamValueEvent`s; translate façade ParamValue/Mod/Gesture* from block.events (fixes silent drop); inactive flush via `inactive_plugin_handle()` | ignored test vs Surge XT |
-| ⬜ | T20 | `PARAM-VST3` | VST3: `vst3/param_changes.rs` (IParamValueQueue/IParameterChanges, prealloc) → `ProcessData.inputParameterChanges`; normalized values on ring; `setParamNormalized` GUI sync; `getParamValueByString` | extend tests/vst3_render.rs |
+| ✅ | T18 | `PARAM-HOST` | `PluginInstance::set_param` + `ParamChange` SPSC ring; `ParamInfo: Serialize`; per-instance `rtrb` ParamChange ring created at `activate()` | host.rs, PluginInstance trait |
+| ✅ | T19 | `PARAM-CLAP` | CLAP: ring drain → `ParamValueEvent`s; translate façade ParamValue/Mod/Gesture* from block.events | clap/process.rs, clap/instance.rs |
+| ✅ | T20 | `PARAM-VST3` | VST3: `vst3/param_changes.rs` (IParamValueQueue/IParameterChanges, prealloc) → `ProcessData.inputParameterChanges`; normalized values on ring; `setParamNormalized` GUI sync | vst3/param_changes.rs, vst3/process.rs, vst3/instance.rs |
 | ⬜ | T21 | `PARAM-TOOLS` | Params tools (list_params paged/filtered, get_params, set_params, convert_param_value) in trait + registry + debug page | trait + registry + debug page |
 
 #### Feature 6: Contract growth (as investigation demands) — ✅ Landed
@@ -86,9 +86,6 @@ Investigation starts here.
 | ⬜ | P1 | S | `INVESTIGATE` | Manual investigation pass: Vital, Serum 2, Arturia (F3, T15) | snapshot → GUI knob → diff loop; export corpus; record findings (feeds F4/F6) |
 | ⬜ | P2 | S | `CODEC-SERUM2` | `serum2` codec (decode-first from corpus) (F4, T16) | Driven by F3 findings |
 | ⬜ | P2 | S | `CODEC-ARTURIA` | `arturia` codec (decode-first from corpus) (F4, T17) | Driven by F3 findings |
-| ⬜ | P1 | S | `PARAM-HOST` | `PluginInstance::set_param` + `param_text_to_value` (F5, T18) | `ParamInfo: Serialize`; per-instance `rtrb` ParamChange ring created at `activate()` |
-| ⬜ | P2 | S | `PARAM-CLAP` | CLAP param ring drain → `ParamValueEvent`s (F5, T19) | Translate façade ParamValue/Mod/Gesture* from block.events; inactive flush |
-| ⬜ | P2 | M | `PARAM-VST3` | VST3 `param_changes.rs` (F5, T20) | `IParamValueQueue`/`IParameterChanges` → `ProcessData.inputParameterChanges`; normalized values on ring; `setParamNormalized` GUI sync |
 | ⬜ | P2 | S | `MCP-SMOKE` | MCP E2E smoke + docs (F7, T27) | `claude mcp add --transport http`; README + design updates |
 
 ## Deferred by decision
@@ -97,6 +94,7 @@ Investigation starts here.
 
 The full record lives in @docs/ops/CHANGELOG.md.
 
+- `T18`–`T20` **Realtime Parameter Automation Ring** (`PARAM-AUTOMATION` ✅ · 2026-09-01) — Lock-free `rtrb` SPSC parameter ring (`ParamChange`) instantiated on `PluginInstance::activate`, CLAP `ParamValueEvent` ring drain and event translation in `ClapAudioProcessor`, VST3 `IParameterChanges` / `IParamValueQueue` COM objects in `vst3/param_changes.rs` wired into `ProcessData.inputParameterChanges` with normalized value mapping, and Fugue parameter automation curve evaluation and block slicing in `render_offline`.
 - **v0.2.0 State Tools & AI Sampler** (✅ · 2026-09-01 · `uztunkyr` `v0.2.0`) — Standalone MCP server (`nexus-mcp`), driver-free fast offline rendering engine (`render_offline` + 32-bit float WAV), `simply-fugue` musical sequencing model, 10 expanded tool definitions, REST debug UI audio player, and native VST3/CLAP generic preset and parameter APIs.
 - `T13`–`T14` **REST frontend + debug UI** (`REST-DEBUG` ✅ · 2026-08-26 · `qqkwzolo` `4b799c8c`) — `crates/nexus-rest` (axum server on dedicated thread + tokio runtime, loopback-only dual bind on 9996, `GET /tools`, `POST /tools/{name}`, per-tool timeouts, socket tests) + `/debug` page (inlined HTML/JS, collapsible response tree, snapshot/diff-against-live).
 - `T6`–`T12` **State, snapshots & codecs** (`STATE-CODECS` ✅ · 2026-08-26 · `luuznszn` `364ffc90`) — `get_state`/`set_state` (sha256/base64 cap, auto-snapshot), `SnapshotStore` (in-memory 32/256MB LRU + on-disk corpus export to `.../Nexus/state-corpus/<plugin_id>/`), `StateCodec` trait + ordered registry, `generic` sniff codec (recursive gzip/zlib, RIFF walk, VST3 chunk-list framing, JSON/XML detection, binary leaves), `vital-json` codec (lossless JSON decode/encode), `edit_state` (JSON-pointer ops, `base_sha256` guard, dry-run, through-the-plugin verify), `diff_state` (doc-level structural diff).

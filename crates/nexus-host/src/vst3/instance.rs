@@ -38,6 +38,8 @@ pub struct Vst3PluginInstance {
     /// Owns the factory + dylib; dropped last so released COM objects above
     /// always call into a still-loaded library.
     module: Vst3Module,
+    /// Parameter change ring producer, created on activate.
+    param_producer: Option<rtrb::Producer<crate::host::ParamChange>>,
 }
 
 impl Vst3PluginInstance {
@@ -74,6 +76,7 @@ impl Vst3PluginInstance {
             _host: host,
             active: false,
             module,
+            param_producer: None,
         })
     }
 
@@ -83,6 +86,7 @@ impl Vst3PluginInstance {
             unsafe { self.component.setActive(0) };
             self.active = false;
         }
+        self.param_producer = None;
         unsafe {
             if let Some(controller) = &self.controller {
                 controller.terminate();
@@ -148,6 +152,10 @@ impl PluginInstance for Vst3PluginInstance {
         unsafe { component.setActive(1) };
         self.active = true;
 
+        let (producer, consumer) = rtrb::RingBuffer::new(1024);
+        self.param_producer = Some(producer);
+        let ctrl_clone = self.controller.clone();
+
         // A fresh (ref-counted) IAudioProcessor handle for the audio thread.
         let audio_processor = self
             .component
@@ -159,6 +167,8 @@ impl PluginInstance for Vst3PluginInstance {
             &in_channels,
             &out_channels,
             config.max_block_frames,
+            consumer,
+            ctrl_clone,
         )))
     }
 
@@ -167,6 +177,30 @@ impl PluginInstance for Vst3PluginInstance {
             unsafe { self.component.setActive(0) };
             self.active = false;
         }
+        self.param_producer = None;
+    }
+
+    fn param_producer(&mut self) -> Option<&mut rtrb::Producer<crate::host::ParamChange>> {
+        self.param_producer.as_mut()
+    }
+
+    fn take_param_producer(&mut self) -> Option<rtrb::Producer<crate::host::ParamChange>> {
+        self.param_producer.take()
+    }
+
+    fn set_param(&mut self, id: u32, value: f64) -> Result<(), HostError> {
+        if let Some(controller) = &self.controller {
+            let normalized = unsafe { controller.plainParamToNormalized(id, value) };
+            unsafe { controller.setParamNormalized(id, normalized) };
+        }
+        if let Some(producer) = &mut self.param_producer {
+            let _ = producer.push(crate::host::ParamChange {
+                id,
+                value,
+                offset_frames: 0,
+            });
+        }
+        Ok(())
     }
 
     fn params(&mut self) -> Vec<crate::host::ParamInfo> {

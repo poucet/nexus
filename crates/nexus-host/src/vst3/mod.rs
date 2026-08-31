@@ -13,6 +13,7 @@ pub mod event_list;
 pub mod host_app;
 pub mod instance;
 pub mod module;
+pub mod param_changes;
 pub mod params;
 pub mod probe;
 pub mod process;

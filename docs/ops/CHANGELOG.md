@@ -12,6 +12,14 @@
 
 ## Unreleased
 
+#### Realtime Parameter Automation Ring (`PARAM-AUTOMATION`) · 2026-09-01 00:30
+
+**Lock-free parameter change ring (`rtrb`), CLAP & VST3 realtime event pipelines, and offline automation curve evaluation** (`nexus-host`).
+- **`ParamChange` SPSC Ring (`host.rs`, `PluginInstance::activate`)**: Defined `ParamChange { id, value, offset_frames }`. `PluginInstance::activate` instantiates a lock-free 1024-capacity SPSC ring using `rtrb`, exposing the `rtrb::Producer<ParamChange>` to the host via `param_producer()`, `take_param_producer()`, and `set_param()`.
+- **CLAP Event Processing (`clap/process.rs`, `clap/instance.rs`)**: `ClapAudioProcessor` drains parameter changes from the `rtrb::Consumer` per block into `ParamValueEvent`s on the input event list with sample frame offsets, and maps façade `Event::ParamValue/Mod/Gesture*` from `block.events`.
+- **VST3 Parameter Changes COM Objects (`vst3/param_changes.rs`, `vst3/process.rs`, `vst3/instance.rs`)**: Implemented preallocated `HostParameterChanges` (`IParameterChanges`) and `HostParamQueue` (`IParamValueQueue`) COM objects. Maps plain values to normalized (0..1) via `IEditController::plainParamToNormalized` and passes to `ProcessData.inputParameterChanges`.
+- **Curve Compilation & Block Slicing (`render.rs`)**: Slices high-level parameter automation curves from `simply_fugue::composite::CompositeFugue` (`Linear`, `Exp`, `Log`, `None`) into time-stamped `ParamChange` points evaluated across block boundaries during offline rendering.
+
 ---
 
 ## v0.2.0 — State Tools & AI Sampler

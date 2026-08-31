@@ -54,7 +54,7 @@ pub struct PluginDescriptor {
 
 /// Static information about one plugin parameter (the façade view of a CLAP
 /// `clap_param_info` / VST3 parameter).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParamInfo {
     /// Stable parameter id.
     pub id: u32,
@@ -75,6 +75,17 @@ pub struct ParamInfo {
     pub is_bypass: bool,
     pub is_automatable: bool,
     pub is_modulatable: bool,
+}
+
+/// A real-time parameter change event sent to an audio processor.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ParamChange {
+    /// Stable parameter identifier.
+    pub id: u32,
+    /// Plain parameter target value.
+    pub value: f64,
+    /// Sample frame offset within the current processing block (0..block_frames).
+    pub offset_frames: u32,
 }
 
 /// Polyphony information reported by a plugin's `voice-info` extension.
@@ -117,6 +128,34 @@ pub trait PluginInstance {
 
     /// Deactivate, after the processor has been stopped and dropped. Idempotent.
     fn deactivate(&mut self);
+
+    /// Get a mutable reference to the parameter change ring producer, if activated.
+    fn param_producer(&mut self) -> Option<&mut rtrb::Producer<ParamChange>> {
+        None
+    }
+
+    /// Take ownership of the parameter change ring producer, if activated.
+    fn take_param_producer(&mut self) -> Option<rtrb::Producer<ParamChange>> {
+        None
+    }
+
+    /// Send a parameter change into the realtime ring buffer.
+    fn send_param_change(&mut self, change: ParamChange) -> Result<(), HostError> {
+        if let Some(producer) = self.param_producer() {
+            producer
+                .push(change)
+                .map_err(|e| HostError::Load(format!("param change ring full: {e}")))?;
+            Ok(())
+        } else {
+            Err(HostError::Load("plugin not activated or param ring unavailable".into()))
+        }
+    }
+
+    /// Set a parameter value on the instance. If active, queues a parameter change.
+    fn set_param(&mut self, id: u32, value: f64) -> Result<(), HostError> {
+        let _ = (id, value);
+        Ok(())
+    }
 
     /// Enumerate the plugin's parameters. Empty if it exposes no parameters.
     fn params(&mut self) -> Vec<ParamInfo> {

@@ -7,19 +7,22 @@
 //! counts. The façade's single input/output map to the **main** bus (index 0).
 //! Buffers are allocated once at activation and reused every block.
 
+use std::collections::BTreeMap;
 use std::ptr;
 use std::sync::Arc;
 
 use vst3_sdk::Steinberg::Vst::{
     AudioBusBuffers, AudioBusBuffers__type0, Event, Event_, IAudioProcessor, IAudioProcessorTrait,
-    IEventList, NoteOffEvent, NoteOnEvent, ProcessData, ProcessModes_, SymbolicSampleSizes_,
+    IEditController, IEditControllerTrait, IEventList, IParameterChanges, NoteOffEvent, NoteOnEvent,
+    ProcessData, ProcessModes_, SymbolicSampleSizes_,
 };
 use vst3_sdk::{ComPtr, ComWrapper};
 
-use crate::host::{AudioProcessor, HostError};
+use crate::host::{AudioProcessor, HostError, ParamChange};
 use crate::process::{Event as FacadeEvent, NoteEventKind, ProcessBlock, TimedEvent};
 use crate::vst3::event_list::HostEventList;
 use crate::vst3::module::LoadedModule;
+use crate::vst3::param_changes::{HostParameterChanges, ParamPoint};
 
 /// Per-channel buffers for one audio bus, plus the channel-pointer array VST3
 /// reads/writes (`channelBuffers32`).
@@ -65,6 +68,9 @@ pub struct Vst3AudioProcessor {
     audio_out: Vec<AudioBusBuffers>,
     event_list: ComWrapper<HostEventList>,
     vst_events: Vec<Event>,
+    param_consumer: rtrb::Consumer<ParamChange>,
+    param_changes: ComWrapper<HostParameterChanges>,
+    controller: Option<ComPtr<IEditController>>,
     started: bool,
 }
 
@@ -81,6 +87,8 @@ impl Vst3AudioProcessor {
         input_bus_channels: &[usize],
         output_bus_channels: &[usize],
         max_frames: usize,
+        param_consumer: rtrb::Consumer<ParamChange>,
+        controller: Option<ComPtr<IEditController>>,
     ) -> Self {
         let in_buses = input_bus_channels.iter().map(|&c| BusBuffers::new(c, max_frames)).collect();
         let out_buses =
@@ -95,6 +103,9 @@ impl Vst3AudioProcessor {
             audio_out: Vec::with_capacity(output_bus_channels.len()),
             event_list: HostEventList::new(64),
             vst_events: Vec::with_capacity(64),
+            param_consumer,
+            param_changes: HostParameterChanges::new(16),
+            controller,
             started: false,
         }
     }
@@ -174,9 +185,42 @@ impl AudioProcessor for Vst3AudioProcessor {
             audio_out,
             event_list,
             vst_events,
+            param_consumer,
+            param_changes,
+            controller,
             ..
         } = self;
         let frames = block.frames.min(*max_frames);
+
+        // --- parameter changes ---
+        let mut param_map: BTreeMap<u32, Vec<ParamPoint>> = BTreeMap::new();
+
+        while let Ok(change) = param_consumer.pop() {
+            let offset = (change.offset_frames as i32).min(frames.saturating_sub(1) as i32);
+            let norm = controller.as_ref().map_or(change.value, |c| unsafe {
+                c.plainParamToNormalized(change.id, change.value)
+            });
+            param_map.entry(change.id).or_default().push(ParamPoint {
+                sample_offset: offset,
+                value: norm,
+            });
+        }
+
+        for timed in block.events.iter() {
+            if let FacadeEvent::ParamValue { param_id, value, .. } = &timed.event {
+                let offset = (timed.time as i32).min(frames.saturating_sub(1) as i32);
+                let norm = controller.as_ref().map_or(*value, |c| unsafe {
+                    c.plainParamToNormalized(*param_id, *value)
+                });
+                param_map.entry(*param_id).or_default().push(ParamPoint {
+                    sample_offset: offset,
+                    value: norm,
+                });
+            }
+        }
+
+        let changes_vec: Vec<_> = param_map.into_iter().collect();
+        param_changes.set_changes(&changes_vec);
 
         // --- events ---
         vst_events.clear();
@@ -210,9 +254,16 @@ impl AudioProcessor for Vst3AudioProcessor {
             audio_out.push(bus.prepare(frames));
         }
 
-        // Keep the event-list ComPtr alive across the call.
+        // Keep the event-list and param-changes ComPtrs alive across the call.
         let events = event_list.to_com_ptr::<IEventList>();
         let events_ptr = events.as_ref().map_or(ptr::null_mut(), |e| e.as_ptr());
+
+        let param_changes_com = param_changes.to_com_ptr::<IParameterChanges>();
+        let param_changes_ptr = if param_changes.active_count() > 0 {
+            param_changes_com.as_ref().map_or(ptr::null_mut(), |p| p.as_ptr())
+        } else {
+            ptr::null_mut()
+        };
 
         let mut data = ProcessData {
             processMode: ProcessModes_::kRealtime as i32,
@@ -222,7 +273,7 @@ impl AudioProcessor for Vst3AudioProcessor {
             numOutputs: out_buses.len() as i32,
             inputs: if audio_in.is_empty() { ptr::null_mut() } else { audio_in.as_mut_ptr() },
             outputs: if audio_out.is_empty() { ptr::null_mut() } else { audio_out.as_mut_ptr() },
-            inputParameterChanges: ptr::null_mut(),
+            inputParameterChanges: param_changes_ptr,
             outputParameterChanges: ptr::null_mut(),
             inputEvents: events_ptr,
             outputEvents: ptr::null_mut(),
@@ -231,6 +282,7 @@ impl AudioProcessor for Vst3AudioProcessor {
 
         // SAFETY: all pointers above are valid for the duration of the call.
         let _ = unsafe { processor.process(&mut data) };
+        drop(param_changes_com);
         drop(events);
 
         // --- copy the main output bus (0) back into the façade ---

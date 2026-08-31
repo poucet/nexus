@@ -3,13 +3,15 @@
 //! Executes a [`PluginInstance`] / [`AudioProcessor`] at maximum CPU speed without
 //! requiring an active hardware audio device or sound driver.
 
+use std::collections::BTreeMap;
 use std::io::Cursor;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::fugue::{CompiledFugue, FugueEvent};
-use crate::host::{AudioConfig, HostError, PluginInstance};
+use crate::host::{AudioConfig, HostError, ParamChange, PluginInstance};
 use crate::process::{AudioBuffer, Event, EventBuffer, NoteEventKind, ProcessBlock};
+use simply_fugue::types::InterpolationMode;
 
 /// Configuration options for an offline render.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -79,6 +81,47 @@ struct ScheduledHostEvent {
     event: Event,
 }
 
+/// A keyframe on a parameter automation timeline.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ParamKeyframe {
+    pub sample_offset: usize,
+    pub value: f64,
+    pub interpolation: InterpolationMode,
+}
+
+/// Evaluate an interpolated parameter value at sample `s` from sorted keyframes.
+pub fn evaluate_param_curve(keyframes: &[ParamKeyframe], s: usize) -> Option<f64> {
+    if keyframes.is_empty() {
+        return None;
+    }
+    if s <= keyframes[0].sample_offset {
+        return Some(keyframes[0].value);
+    }
+    if s >= keyframes.last().unwrap().sample_offset {
+        return Some(keyframes.last().unwrap().value);
+    }
+
+    for i in 0..keyframes.len() - 1 {
+        let k0 = &keyframes[i];
+        let k1 = &keyframes[i + 1];
+        if s >= k0.sample_offset && s <= k1.sample_offset {
+            let span = k1.sample_offset - k0.sample_offset;
+            if span == 0 {
+                return Some(k1.value);
+            }
+            let t = (s - k0.sample_offset) as f64 / span as f64;
+            let factor = match k0.interpolation {
+                InterpolationMode::None => 0.0,
+                InterpolationMode::Linear => t,
+                InterpolationMode::Exp => t * t,
+                InterpolationMode::Log => t.sqrt(),
+            };
+            return Some(k0.value + (k1.value - k0.value) * factor);
+        }
+    }
+    Some(keyframes.last().unwrap().value)
+}
+
 /// Render `instance` offline according to `opts`.
 pub fn render_offline(
     instance: &mut dyn PluginInstance,
@@ -93,8 +136,10 @@ pub fn render_offline(
     let total_frames = ((opts.fugue.duration_beats * samples_per_beat).round() as usize).max(block_size);
     let duration_s = total_frames as f64 / sample_rate;
 
-    // 1. Compile timed events to sample positions
+    // 1. Compile timed musical events and parameter automation curves
     let mut scheduled = Vec::new();
+    let mut param_tracks: BTreeMap<u32, Vec<ParamKeyframe>> = BTreeMap::new();
+
     for timed in &opts.fugue.events {
         let onset_sample = (timed.beat_offset * samples_per_beat).round() as usize;
 
@@ -160,25 +205,22 @@ pub fn render_offline(
                     },
                 });
             }
-            FugueEvent::Param { id, value, .. } => {
-                scheduled.push(ScheduledHostEvent {
+            FugueEvent::Param { id, value, interpolation } => {
+                param_tracks.entry(*id).or_default().push(ParamKeyframe {
                     sample_offset: onset_sample,
-                    event: Event::ParamValue {
-                        param_id: *id,
-                        note_id: -1,
-                        port_index: 0,
-                        channel: 0,
-                        key: 0,
-                        value: *value as f64,
-                    },
+                    value: *value as f64,
+                    interpolation: *interpolation,
                 });
             }
             _ => {}
         }
     }
 
-    // Sort scheduled events chronologically
+    // Sort scheduled events and parameter keyframes chronologically
     scheduled.sort_by_key(|s| s.sample_offset);
+    for keyframes in param_tracks.values_mut() {
+        keyframes.sort_by_key(|k| k.sample_offset);
+    }
 
     // 2. Activate plugin
     let config = AudioConfig {
@@ -207,6 +249,7 @@ pub fn render_offline(
 
         let block_end = current_frame + block_frames;
 
+        // Schedule musical note / MIDI events falling into this block
         while event_idx < scheduled.len() && scheduled[event_idx].sample_offset < block_end {
             let ev = &scheduled[event_idx];
             if ev.sample_offset >= current_frame {
@@ -214,6 +257,63 @@ pub fn render_offline(
                 input_events.push(frame_in_block, ev.event.clone());
             }
             event_idx += 1;
+        }
+
+        // Slice parameter curves and push ParamChange points
+        let mut block_params: Vec<ParamChange> = Vec::new();
+        let step = 64usize.min(block_frames).max(1);
+
+        for (&param_id, keyframes) in &param_tracks {
+            // Keyframe events within this block
+            for k in keyframes {
+                if k.sample_offset >= current_frame && k.sample_offset < block_end {
+                    let offset = (k.sample_offset - current_frame) as u32;
+                    block_params.push(ParamChange {
+                        id: param_id,
+                        value: k.value,
+                        offset_frames: offset,
+                    });
+                }
+            }
+
+            // If keyframes span this block, sample interpolated points
+            if let Some(first) = keyframes.first() {
+                if current_frame >= first.sample_offset {
+                    for offset in (0..block_frames).step_by(step) {
+                        let sample_idx = current_frame + offset;
+                        if let Some(val) = evaluate_param_curve(keyframes, sample_idx) {
+                            if !block_params.iter().any(|c| c.id == param_id && c.offset_frames == offset as u32) {
+                                block_params.push(ParamChange {
+                                    id: param_id,
+                                    value: val,
+                                    offset_frames: offset as u32,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort block param changes chronologically by offset
+        block_params.sort_by_key(|p| p.offset_frames);
+
+        // Deliver parameter changes to ring buffer and facade event list
+        for change in &block_params {
+            if let Some(producer) = instance.param_producer() {
+                let _ = producer.push(*change);
+            }
+            input_events.push(
+                change.offset_frames,
+                Event::ParamValue {
+                    param_id: change.id,
+                    note_id: -1,
+                    port_index: 0,
+                    channel: 0,
+                    key: 0,
+                    value: change.value,
+                },
+            );
         }
 
         let mut block = ProcessBlock {
@@ -396,5 +496,145 @@ mod tests {
         assert!(result.peak_db > -7.0 && result.peak_db < -5.0); // ~0.5 amplitude ≈ -6 dBFS
         assert!(!result.wav_bytes.is_empty());
         assert_eq!(&result.wav_bytes[0..4], b"RIFF");
+    }
+
+    #[test]
+    fn test_evaluate_param_curve() {
+        let keyframes = vec![
+            ParamKeyframe {
+                sample_offset: 100,
+                value: 0.0,
+                interpolation: InterpolationMode::Linear,
+            },
+            ParamKeyframe {
+                sample_offset: 200,
+                value: 10.0,
+                interpolation: InterpolationMode::Exp,
+            },
+            ParamKeyframe {
+                sample_offset: 300,
+                value: 20.0,
+                interpolation: InterpolationMode::None,
+            },
+        ];
+
+        // Before first point
+        assert_eq!(evaluate_param_curve(&keyframes, 50), Some(0.0));
+        // At first point
+        assert_eq!(evaluate_param_curve(&keyframes, 100), Some(0.0));
+        // Midpoint of Linear (150 -> 5.0)
+        assert_eq!(evaluate_param_curve(&keyframes, 150), Some(5.0));
+        // At second point
+        assert_eq!(evaluate_param_curve(&keyframes, 200), Some(10.0));
+        // Midpoint of Exp (250 -> t=0.5 -> t^2=0.25 -> 10 + 10*0.25 = 12.5)
+        assert_eq!(evaluate_param_curve(&keyframes, 250), Some(12.5));
+        // At third point
+        assert_eq!(evaluate_param_curve(&keyframes, 300), Some(20.0));
+        // After last point
+        assert_eq!(evaluate_param_curve(&keyframes, 400), Some(20.0));
+    }
+
+    struct DummyParamInstance {
+        param_producer: Option<rtrb::Producer<ParamChange>>,
+    }
+
+    impl PluginInstance for DummyParamInstance {
+        fn activate(&mut self, _config: AudioConfig) -> Result<Box<dyn AudioProcessor>, HostError> {
+            let (producer, consumer) = rtrb::RingBuffer::new(1024);
+            self.param_producer = Some(producer);
+            Ok(Box::new(DummyParamProcessor {
+                consumer,
+                current_gain: 0.0,
+            }))
+        }
+
+        fn deactivate(&mut self) {
+            self.param_producer = None;
+        }
+
+        fn param_producer(&mut self) -> Option<&mut rtrb::Producer<ParamChange>> {
+            self.param_producer.as_mut()
+        }
+
+        fn take_param_producer(&mut self) -> Option<rtrb::Producer<ParamChange>> {
+            self.param_producer.take()
+        }
+    }
+
+    struct DummyParamProcessor {
+        consumer: rtrb::Consumer<ParamChange>,
+        current_gain: f64,
+    }
+
+    impl AudioProcessor for DummyParamProcessor {
+        fn start_processing(&mut self) -> Result<(), HostError> {
+            Ok(())
+        }
+
+        fn stop_processing(&mut self) {}
+
+        fn process(&mut self, block: &mut ProcessBlock<'_>) {
+            while let Ok(change) = self.consumer.pop() {
+                if change.id == 1 {
+                    self.current_gain = change.value;
+                }
+            }
+            let frames = block.output.frames();
+            for f in 0..frames {
+                let sample = (self.current_gain as f32) * 0.8;
+                if let Some(left) = block.output.channel_mut(0) {
+                    left[f] = sample;
+                }
+                if let Some(right) = block.output.channel_mut(1) {
+                    right[f] = sample;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn render_offline_with_param_curve_automation() {
+        let mut inst = DummyParamInstance { param_producer: None };
+
+        let mut params = std::collections::HashMap::new();
+        params.insert(
+            1,
+            vec![
+                simply_fugue::composite::ParamPointItem {
+                    beat: 0.0,
+                    value: 0.0,
+                    curve: InterpolationMode::Linear,
+                },
+                simply_fugue::composite::ParamPointItem {
+                    beat: 1.0,
+                    value: 1.0,
+                    curve: InterpolationMode::None,
+                },
+            ],
+        );
+
+        let fugue = CompositeFugue {
+            duration_beats: Some(1.0),
+            params,
+            ..Default::default()
+        }
+        .compile();
+
+        let opts = RenderOptions {
+            sample_rate: 48000.0,
+            block_size: 256,
+            tempo_bpm: 120.0,
+            fugue,
+        };
+
+        let result = render_offline(&mut inst, &opts).unwrap();
+        assert_eq!(result.frames, 24000); // 1 beat at 120 bpm = 0.5s = 24000 frames
+
+        // The first block should have low amplitude (~0.0) and final blocks should reach ~0.8
+        let first_sample = result.channels[0][0];
+        let last_sample = result.channels[0][result.frames - 1];
+
+        assert!(first_sample < 0.05, "expected starting gain near 0, got {first_sample}");
+        assert!(last_sample > 0.75, "expected final gain near 0.8, got {last_sample}");
     }
 }

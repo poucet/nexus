@@ -30,6 +30,8 @@ pub struct ClapPluginInstance {
     messages: Receiver<MainThreadMessage>,
     /// The plugin's floating editor window, if open.
     editor: Option<ClapEditor>,
+    /// Parameter change ring producer, created on activate.
+    param_producer: Option<rtrb::Producer<crate::host::ParamChange>>,
 }
 
 impl ClapPluginInstance {
@@ -59,6 +61,7 @@ impl ClapPluginInstance {
             instance,
             messages: receiver,
             editor: None,
+            param_producer: None,
         })
     }
 }
@@ -76,6 +79,9 @@ impl HostPluginInstance for ClapPluginInstance {
             max_frames_count: config.max_block_frames as u32,
         };
 
+        let (producer, consumer) = rtrb::RingBuffer::new(1024);
+        self.param_producer = Some(producer);
+
         let stopped = self
             .instance
             .activate(|_, _| (), clap_config)
@@ -85,13 +91,34 @@ impl HostPluginInstance for ClapPluginInstance {
             stopped.into(),
             io,
             config.max_block_frames,
+            consumer,
         )))
     }
 
     fn deactivate(&mut self) {
+        self.param_producer = None;
         // clack tears the plugin down when the instance is dropped; the engine
         // drops the (stopped) audio processor before this. Explicit
         // processor-returning deactivation can be revisited if needed.
+    }
+
+    fn param_producer(&mut self) -> Option<&mut rtrb::Producer<crate::host::ParamChange>> {
+        self.param_producer.as_mut()
+    }
+
+    fn take_param_producer(&mut self) -> Option<rtrb::Producer<crate::host::ParamChange>> {
+        self.param_producer.take()
+    }
+
+    fn set_param(&mut self, id: u32, value: f64) -> Result<(), HostError> {
+        if let Some(producer) = &mut self.param_producer {
+            let _ = producer.push(crate::host::ParamChange {
+                id,
+                value,
+                offset_frames: 0,
+            });
+        }
+        Ok(())
     }
 
     fn params(&mut self) -> Vec<crate::host::ParamInfo> {

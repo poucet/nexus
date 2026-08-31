@@ -6,12 +6,16 @@
 //! [`IoLayout`]) and reused every block. Modeled on clack's cpal host example.
 
 use clack_host::events::Match;
-use clack_host::events::event_types::{MidiEvent, NoteChokeEvent, NoteOffEvent, NoteOnEvent};
+use clack_host::events::event_types::{
+    MidiEvent, NoteChokeEvent, NoteOffEvent, NoteOnEvent, ParamGestureBeginEvent,
+    ParamGestureEndEvent, ParamModEvent, ParamValueEvent,
+};
 use clack_host::prelude::*;
+use clack_host::utils::Cookie;
 
 use crate::clap::host::NexusHost;
 use crate::clap::ports::IoLayout;
-use crate::host::{AudioProcessor, HostError};
+use crate::host::{AudioProcessor, HostError, ParamChange};
 use crate::process::{Event, NoteEventKind, ProcessBlock};
 
 /// A CLAP plugin's audio-thread half. `Send`, so the engine can move it onto
@@ -28,10 +32,16 @@ pub struct ClapAudioProcessor {
     output_backing: Vec<Vec<f32>>,
     events: EventBuffer,
     steady: u64,
+    param_consumer: rtrb::Consumer<ParamChange>,
 }
 
 impl ClapAudioProcessor {
-    pub fn new(processor: PluginAudioProcessor<NexusHost>, io: IoLayout, max_frames: usize) -> Self {
+    pub fn new(
+        processor: PluginAudioProcessor<NexusHost>,
+        io: IoLayout,
+        max_frames: usize,
+        param_consumer: rtrb::Consumer<ParamChange>,
+    ) -> Self {
         let input_backing = io
             .input_ports
             .iter()
@@ -60,6 +70,7 @@ impl ClapAudioProcessor {
             output_backing,
             events: EventBuffer::with_capacity(64),
             steady: 0,
+            param_consumer,
         }
     }
 }
@@ -98,6 +109,7 @@ impl AudioProcessor for ClapAudioProcessor {
             output_backing,
             events,
             steady,
+            param_consumer,
         } = self;
         let max_frames = *max_frames;
         let frames = block.frames.min(max_frames);
@@ -105,6 +117,20 @@ impl AudioProcessor for ClapAudioProcessor {
         // --- input events: façade Event -> clack events ---
         events.clear();
         let note_port = io.note_port.unwrap_or(0);
+
+        // Drain realtime parameter change ring from host
+        while let Ok(change) = param_consumer.pop() {
+            let pckn = Pckn::new(Match::All, Match::All, Match::All, Match::All);
+            let offset = (change.offset_frames as u32).min(frames.saturating_sub(1) as u32);
+            events.push(&ParamValueEvent::new(
+                offset,
+                ClapId::from(change.id),
+                pckn,
+                change.value,
+                Cookie::empty(),
+            ));
+        }
+
         for ev in block.events.iter() {
             match &ev.event {
                 Event::Note { kind, note_id, channel, key, velocity, .. } => {
@@ -126,9 +152,38 @@ impl AudioProcessor for ClapAudioProcessor {
                 Event::Midi { port_index, data } => {
                     events.push(&MidiEvent::new(ev.time, *port_index, *data))
                 }
-                // Param / note-expression / transport / midi2 / sysex are wired
-                // with params (T26) and nexus-wrap; the engine's MIDI path only
-                // produces Note + Midi events.
+                Event::ParamValue { param_id, note_id, port_index, channel, key, value } => {
+                    let port_m = if *port_index >= 0 { Match::Specific(*port_index as u16) } else { Match::All };
+                    let chan_m = if *channel >= 0 { Match::Specific(*channel as u16) } else { Match::All };
+                    let key_m = if *key >= 0 { Match::Specific(*key as u16) } else { Match::All };
+                    let pckn = Pckn::new(port_m, chan_m, key_m, note_id_match(*note_id));
+                    events.push(&ParamValueEvent::new(
+                        ev.time,
+                        ClapId::from(*param_id),
+                        pckn,
+                        *value,
+                        Cookie::empty(),
+                    ));
+                }
+                Event::ParamMod { param_id, note_id, port_index, channel, key, amount } => {
+                    let port_m = if *port_index >= 0 { Match::Specific(*port_index as u16) } else { Match::All };
+                    let chan_m = if *channel >= 0 { Match::Specific(*channel as u16) } else { Match::All };
+                    let key_m = if *key >= 0 { Match::Specific(*key as u16) } else { Match::All };
+                    let pckn = Pckn::new(port_m, chan_m, key_m, note_id_match(*note_id));
+                    events.push(&ParamModEvent::new(
+                        ev.time,
+                        ClapId::from(*param_id),
+                        pckn,
+                        *amount,
+                        Cookie::empty(),
+                    ));
+                }
+                Event::ParamGestureBegin { param_id } => {
+                    events.push(&ParamGestureBeginEvent::new(ev.time, ClapId::from(*param_id)));
+                }
+                Event::ParamGestureEnd { param_id } => {
+                    events.push(&ParamGestureEndEvent::new(ev.time, ClapId::from(*param_id)));
+                }
                 _ => {}
             }
         }
