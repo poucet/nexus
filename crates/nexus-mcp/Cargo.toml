@@ -1,0 +1,31 @@
+[package]
+name = "nexus-mcp"
+description = "MCP server exposing Nexus plugin hosting, sampling, and state tools to AI agents."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nexus-host.workspace = true
+nexus-tools.workspace = true
+async-trait.workspace = true
+rmcp.workspace = true
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+clap = { workspace = true, features = ["derive"] }
+log.workspace = true
+env_logger.workspace = true
+thiserror.workspace = true
+crossbeam-channel.workspace = true
+base64.workspace = true
+simply-fugue.workspace = true
+
+[[bin]]
+name = "nexus-mcp"
+path = "src/main.rs"
