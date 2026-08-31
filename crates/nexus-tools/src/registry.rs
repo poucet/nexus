@@ -92,6 +92,26 @@ impl ToolRegistry {
                 "Structural diff between snapshot `a` and `b` (omit `b` = the live state): the 'what did that knob change?' call. Changed paths with before/after values, at the decoded-document level."),
             tool!(service, "list_codecs", TimeoutClass::Default, ListCodecsRequest => CodecList, list_codecs,
                 "The registered state codecs and whether each can re-encode (edit_state support)."),
+            tool!(service, "list_plugins", TimeoutClass::Default, ListPluginsRequest => ListPluginsResponse, list_plugins,
+                "List installed CLAP and VST3 plugins found on the system catalog, optionally filtered by query."),
+            tool!(service, "load_plugin", TimeoutClass::Load, LoadPluginRequest => LoadPluginResponse, load_plugin,
+                "Load a plugin by ID or fuzzy name into the session."),
+            tool!(service, "list_presets", TimeoutClass::Default, ListPresetsRequest => ListPresetsResponse, list_presets,
+                "List available .nexuspreset files, optionally filtered by plugin ID."),
+            tool!(service, "load_preset", TimeoutClass::Load, LoadPresetRequest => LoadPresetResponse, load_preset,
+                "Load a preset file into the active plugin instance."),
+            tool!(service, "save_preset", TimeoutClass::Load, SavePresetRequest => SavePresetResponse, save_preset,
+                "Save the current plugin state and metadata as a .nexuspreset file."),
+            tool!(service, "list_params", TimeoutClass::Default, ListParamsRequest => ListParamsResponse, list_params,
+                "List and search parameters exposed by the loaded plugin, with pagination and filtering."),
+            tool!(service, "get_params", TimeoutClass::Default, GetParamsRequest => GetParamsResponse, get_params,
+                "Get current values and display strings for a list of parameter IDs."),
+            tool!(service, "set_params", TimeoutClass::Default, SetParamsRequest => SetParamsResponse, set_params,
+                "Set values for one or more plugin parameters."),
+            tool!(service, "play", TimeoutClass::Default, PlayRequest => PlayResponse, play,
+                "Queue a musical performance (Droplets Fugue format: notes, CCs, automation ramps) for live transport-synced playback."),
+            tool!(service, "render_audio", TimeoutClass::Load, RenderAudioRequest => RenderAudioResponse, render_audio,
+                "Render audio offline through the loaded plugin at max CPU speed without an audio driver. Returns audio metrics and 32-bit float WAV data (base64 or file)."),
         ];
         Self { tools }
     }
@@ -164,6 +184,36 @@ mod tests {
         }
         async fn list_codecs(&self, _req: ListCodecsRequest) -> Result<CodecList, ToolError> {
             Ok(CodecList { codecs: vec![] })
+        }
+        async fn list_plugins(&self, _req: ListPluginsRequest) -> Result<ListPluginsResponse, ToolError> {
+            Ok(ListPluginsResponse { plugins: vec![] })
+        }
+        async fn load_plugin(&self, _req: LoadPluginRequest) -> Result<LoadPluginResponse, ToolError> {
+            Err(ToolError::no_plugin())
+        }
+        async fn list_presets(&self, _req: ListPresetsRequest) -> Result<ListPresetsResponse, ToolError> {
+            Ok(ListPresetsResponse { presets: vec![] })
+        }
+        async fn load_preset(&self, _req: LoadPresetRequest) -> Result<LoadPresetResponse, ToolError> {
+            Err(ToolError::no_plugin())
+        }
+        async fn save_preset(&self, _req: SavePresetRequest) -> Result<SavePresetResponse, ToolError> {
+            Err(ToolError::no_plugin())
+        }
+        async fn list_params(&self, _req: ListParamsRequest) -> Result<ListParamsResponse, ToolError> {
+            Ok(ListParamsResponse { total: 0, offset: 0, params: vec![] })
+        }
+        async fn get_params(&self, _req: GetParamsRequest) -> Result<GetParamsResponse, ToolError> {
+            Ok(GetParamsResponse { params: vec![] })
+        }
+        async fn set_params(&self, _req: SetParamsRequest) -> Result<SetParamsResponse, ToolError> {
+            Ok(SetParamsResponse { updated: vec![] })
+        }
+        async fn play(&self, _req: PlayRequest) -> Result<PlayResponse, ToolError> {
+            Ok(PlayResponse { queued: true, duration_beats: 4.0, total_events: 0 })
+        }
+        async fn render_audio(&self, _req: RenderAudioRequest) -> Result<RenderAudioResponse, ToolError> {
+            Err(ToolError::no_plugin())
         }
     }
 

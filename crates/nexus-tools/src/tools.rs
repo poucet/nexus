@@ -37,4 +37,30 @@ pub trait NexusTools: Send + Sync {
     async fn diff_state(&self, req: DiffStateRequest) -> Result<StateDiff, ToolError>;
 
     async fn list_codecs(&self, req: ListCodecsRequest) -> Result<CodecList, ToolError>;
+
+    // -----------------------------------------------------------------------
+    // Catalog & Presets
+
+    async fn list_plugins(&self, req: ListPluginsRequest) -> Result<ListPluginsResponse, ToolError>;
+    async fn load_plugin(&self, req: LoadPluginRequest) -> Result<LoadPluginResponse, ToolError>;
+
+    async fn list_presets(&self, req: ListPresetsRequest) -> Result<ListPresetsResponse, ToolError>;
+    async fn load_preset(&self, req: LoadPresetRequest) -> Result<LoadPresetResponse, ToolError>;
+    async fn save_preset(&self, req: SavePresetRequest) -> Result<SavePresetResponse, ToolError>;
+
+    // -----------------------------------------------------------------------
+    // Parameters
+
+    async fn list_params(&self, req: ListParamsRequest) -> Result<ListParamsResponse, ToolError>;
+    async fn get_params(&self, req: GetParamsRequest) -> Result<GetParamsResponse, ToolError>;
+    async fn set_params(&self, req: SetParamsRequest) -> Result<SetParamsResponse, ToolError>;
+
+    // -----------------------------------------------------------------------
+    // Performance & Sampling
+
+    /// Queue a transport-synchronized musical performance into the host (Droplets fugue model).
+    async fn play(&self, req: PlayRequest) -> Result<PlayResponse, ToolError>;
+
+    /// Render audio offline through the plugin at max CPU speed without an audio driver.
+    async fn render_audio(&self, req: RenderAudioRequest) -> Result<RenderAudioResponse, ToolError>;
 }

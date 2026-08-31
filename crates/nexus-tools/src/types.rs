@@ -330,3 +330,262 @@ pub struct CodecInfo {
 pub struct CodecList {
     pub codecs: Vec<CodecInfo>,
 }
+
+// ---------------------------------------------------------------------------
+// Catalog & Plugins
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListPluginsRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+}
+
+impl Default for ListPluginsRequest {
+    fn default() -> Self {
+        Self {
+            instance: default_instance(),
+            query: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PluginItem {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vendor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub format: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ListPluginsResponse {
+    pub plugins: Vec<PluginItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LoadPluginRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    /// Plugin ID (exact) or partial/fuzzy name.
+    pub plugin: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadPluginResponse {
+    pub loaded: LoadedPlugin,
+}
+
+// ---------------------------------------------------------------------------
+// Presets
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListPresetsRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
+}
+
+impl Default for ListPresetsRequest {
+    fn default() -> Self {
+        Self {
+            instance: default_instance(),
+            plugin_id: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PresetItem {
+    pub index: u32,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program_list_id: Option<i32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ListPresetsResponse {
+    pub presets: Vec<PresetItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LoadPresetRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    /// Preset name or index.
+    pub preset: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadPresetResponse {
+    pub name: String,
+    pub index: u32,
+    pub loaded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SavePresetRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    /// Name for the preset.
+    pub name: String,
+    /// Optional description or tags.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SavePresetResponse {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+}
+
+// ---------------------------------------------------------------------------
+// Parameters
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ListParamsRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+impl Default for ListParamsRequest {
+    fn default() -> Self {
+        Self {
+            instance: default_instance(),
+            query: None,
+            offset: None,
+            limit: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ParamItem {
+    pub id: u32,
+    pub name: String,
+    pub module: String,
+    pub min_value: f64,
+    pub max_value: f64,
+    pub default_value: f64,
+    pub current_value: Option<f64>,
+    pub display_text: Option<String>,
+    pub is_stepped: bool,
+    pub is_readonly: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ListParamsResponse {
+    pub total: usize,
+    pub offset: usize,
+    pub params: Vec<ParamItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GetParamsRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    pub ids: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ParamValueItem {
+    pub id: u32,
+    pub value: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_text: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct GetParamsResponse {
+    pub params: Vec<ParamValueItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SetParamItem {
+    pub id: u32,
+    pub value: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SetParamsRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    pub params: Vec<SetParamItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SetParamsResponse {
+    pub updated: Vec<ParamValueItem>,
+}
+
+// ---------------------------------------------------------------------------
+// Play (Live Fugue) & Render Audio (Offline Sampler)
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PlayRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    /// Musical fugue performance (Droplets format).
+    pub fugue: nexus_host::fugue::CompositeFugue,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PlayResponse {
+    pub queued: bool,
+    pub duration_beats: f64,
+    pub total_events: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RenderAudioRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    /// Musical fugue performance to render.
+    pub fugue: nexus_host::fugue::CompositeFugue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tempo_bpm: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sample_rate: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_size: Option<usize>,
+    /// "wav_base64" (default) or "file".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_format: Option<String>,
+    /// Target file path when output_format is "file".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RenderAudioResponse {
+    pub sample_rate: u32,
+    pub channels: usize,
+    pub frames: usize,
+    pub duration_s: f64,
+    pub peak_db: f64,
+    pub rms_db: f64,
+    pub is_silent: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wav_base64: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+}
+

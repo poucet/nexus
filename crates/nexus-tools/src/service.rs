@@ -294,6 +294,61 @@ impl NexusTools for ToolsService {
         Self::check_instance(&req.instance)?;
         Ok(CodecList { codecs: self.codecs.list() })
     }
+
+    async fn list_plugins(&self, req: ListPluginsRequest) -> Result<ListPluginsResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        let plugins = self.bridge.list_plugins(req.query).await?;
+        Ok(ListPluginsResponse { plugins })
+    }
+
+    async fn load_plugin(&self, req: LoadPluginRequest) -> Result<LoadPluginResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        let loaded = self.bridge.load_plugin(req.plugin).await?;
+        Ok(LoadPluginResponse { loaded })
+    }
+
+    async fn list_presets(&self, req: ListPresetsRequest) -> Result<ListPresetsResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        let presets = self.bridge.list_presets(req.plugin_id).await?;
+        Ok(ListPresetsResponse { presets })
+    }
+
+    async fn load_preset(&self, req: LoadPresetRequest) -> Result<LoadPresetResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        self.bridge.load_preset(req.preset).await
+    }
+
+    async fn save_preset(&self, req: SavePresetRequest) -> Result<SavePresetResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        self.bridge.save_preset(req.name, req.description).await
+    }
+
+    async fn list_params(&self, req: ListParamsRequest) -> Result<ListParamsResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        self.bridge.list_params(req.query, req.offset, req.limit).await
+    }
+
+    async fn get_params(&self, req: GetParamsRequest) -> Result<GetParamsResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        let params = self.bridge.get_params(req.ids).await?;
+        Ok(GetParamsResponse { params })
+    }
+
+    async fn set_params(&self, req: SetParamsRequest) -> Result<SetParamsResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        let updated = self.bridge.set_params(req.params).await?;
+        Ok(SetParamsResponse { updated })
+    }
+
+    async fn play(&self, req: PlayRequest) -> Result<PlayResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        self.bridge.play(req.fugue).await
+    }
+
+    async fn render_audio(&self, req: RenderAudioRequest) -> Result<RenderAudioResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        self.bridge.render_audio(req).await
+    }
 }
 
 pub fn sha256_hex(data: &[u8]) -> String {
@@ -388,6 +443,29 @@ mod tests {
             }
             self.state = data.to_vec();
             Ok(())
+        }
+
+        fn list_presets(&mut self, _plugin_id: Option<&str>) -> Result<Vec<PresetItem>, ToolError> {
+            if !self.loaded {
+                return Err(ToolError::no_plugin());
+            }
+            Ok(vec![PresetItem {
+                index: 0,
+                name: "Init Preset".into(),
+                category: Some("Factory".into()),
+                program_list_id: Some(0),
+            }])
+        }
+
+        fn load_preset(&mut self, preset: &str) -> Result<LoadPresetResponse, ToolError> {
+            if !self.loaded {
+                return Err(ToolError::no_plugin());
+            }
+            Ok(LoadPresetResponse {
+                name: preset.into(),
+                index: 0,
+                loaded: true,
+            })
         }
     }
 
@@ -671,6 +749,34 @@ mod tests {
         }))
         .unwrap_err();
         assert_eq!(err.code, ErrorCode::NoPlugin);
+        done(svc, handle);
+    }
+
+    #[test]
+    fn play_and_render_audio_smoke() {
+        let (svc, handle) = service(MockHost::vital());
+        let play_res = block_on(svc.play(PlayRequest {
+            instance: "default".into(),
+            fugue: nexus_host::fugue::CompositeFugue {
+                notes: vec![nexus_host::fugue::NoteItem {
+                    beat: 0.0,
+                    note: 60,
+                    duration: 1.0,
+                    velocity: 100,
+                    channel: 0,
+                }],
+                ..Default::default()
+            },
+        }))
+        .unwrap();
+        assert!(play_res.queued);
+
+        let plugins = block_on(svc.list_plugins(ListPluginsRequest::default())).unwrap();
+        assert_eq!(plugins.plugins.len(), 0); // default mock returns empty
+
+        let params = block_on(svc.list_params(ListParamsRequest::default())).unwrap();
+        assert_eq!(params.total, 0);
+
         done(svc, handle);
     }
 }
