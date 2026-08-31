@@ -45,6 +45,36 @@ impl NexusTools for Stub {
     async fn list_codecs(&self, _req: ListCodecsRequest) -> Result<CodecList, ToolError> {
         Ok(CodecList { codecs: vec![] })
     }
+    async fn list_plugins(&self, _req: ListPluginsRequest) -> Result<ListPluginsResponse, ToolError> {
+        Ok(ListPluginsResponse { plugins: vec![] })
+    }
+    async fn load_plugin(&self, _req: LoadPluginRequest) -> Result<LoadPluginResponse, ToolError> {
+        Err(ToolError::no_plugin())
+    }
+    async fn list_presets(&self, _req: ListPresetsRequest) -> Result<ListPresetsResponse, ToolError> {
+        Ok(ListPresetsResponse { presets: vec![] })
+    }
+    async fn load_preset(&self, _req: LoadPresetRequest) -> Result<LoadPresetResponse, ToolError> {
+        Err(ToolError::no_plugin())
+    }
+    async fn save_preset(&self, _req: SavePresetRequest) -> Result<SavePresetResponse, ToolError> {
+        Err(ToolError::no_plugin())
+    }
+    async fn list_params(&self, _req: ListParamsRequest) -> Result<ListParamsResponse, ToolError> {
+        Ok(ListParamsResponse { total: 0, offset: 0, params: vec![] })
+    }
+    async fn get_params(&self, _req: GetParamsRequest) -> Result<GetParamsResponse, ToolError> {
+        Ok(GetParamsResponse { params: vec![] })
+    }
+    async fn set_params(&self, _req: SetParamsRequest) -> Result<SetParamsResponse, ToolError> {
+        Ok(SetParamsResponse { updated: vec![] })
+    }
+    async fn play(&self, _req: PlayRequest) -> Result<PlayResponse, ToolError> {
+        Ok(PlayResponse { queued: true, duration_beats: 4.0, total_events: 0 })
+    }
+    async fn render_audio(&self, _req: RenderAudioRequest) -> Result<RenderAudioResponse, ToolError> {
+        Err(ToolError::no_plugin())
+    }
 }
 
 const PORT: u16 = 19996;

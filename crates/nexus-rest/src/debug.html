@@ -51,6 +51,8 @@
     <button onclick="quick('decode_state', {depth: 4})">Decode live</button>
     <button onclick="quickSnapshot()">Snapshot</button>
     <button onclick="quickDiff()" title="diff last snapshot vs live — turn a knob in the plugin first">Diff vs last snap</button>
+    <button onclick="quickSample()" title="render a 2-second C3 sample offline and play it">Sample C3</button>
+    <button onclick="quickPlay()" title="play live note in host">Play C3</button>
     <button onclick="quick('list_snapshots', {})">Snapshots</button>
   </div>
   <div class="status" id="status">loading tools…</div>
@@ -69,6 +71,7 @@
   </section>
   <section id="response">
     <div class="meta" id="resp-meta">—</div>
+    <div id="audio-container" style="margin-bottom:12px;"></div>
     <div class="tree" id="resp-tree"></div>
   </section>
 </main>
@@ -89,6 +92,27 @@ const EXAMPLES = {
   list_snapshots: {},
   diff_state: { a: "snap-1" },
   list_codecs: {},
+  list_plugins: { query: "" },
+  load_plugin: { plugin: "Vital" },
+  list_presets: {},
+  load_preset: { preset: "Init" },
+  save_preset: { name: "MyPatch" },
+  list_params: { query: "", limit: 20 },
+  get_params: { ids: [0, 1] },
+  set_params: { params: [{ id: 0, value: 0.5 }] },
+  play: { fugue: { notes: [[0, "C3", 1.0, 100], [1.0, "G3", 1.0, 100]] } },
+  render_audio: {
+    tempo_bpm: 120,
+    duration_beats: 4,
+    fugue: {
+      notes: [
+        [0, "C3", 2.0, 100],
+        [0, "E3", 2.0, 90],
+        [0, "G3", 2.0, 95]
+      ]
+    },
+    output_format: "wav_base64"
+  },
 };
 
 async function init() {
@@ -150,11 +174,31 @@ async function quickDiff() {
   await quick('diff_state', { a: lastSnapshot });
 }
 
+async function quickSample() {
+  await quick('render_audio', EXAMPLES.render_audio);
+}
+
+async function quickPlay() {
+  await quick('play', EXAMPLES.play);
+}
+
 function render(name, status, ms, json) {
   const meta = document.getElementById('resp-meta');
   const ok = status === 200;
   meta.className = 'meta ' + (ok ? 'ok' : 'err');
   meta.textContent = name + ' → ' + (status || 'client error') + ' (' + ms + ' ms)';
+  
+  const audioContainer = document.getElementById('audio-container');
+  audioContainer.innerHTML = '';
+  if (ok && json.wav_base64) {
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.autoplay = true;
+    audio.src = 'data:audio/wav;base64,' + json.wav_base64;
+    audio.style.width = '100%';
+    audioContainer.appendChild(audio);
+  }
+
   const tree = document.getElementById('resp-tree');
   tree.innerHTML = '';
   tree.appendChild(node(json, null, 0));
