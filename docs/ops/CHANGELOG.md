@@ -12,7 +12,23 @@
 
 ## Unreleased
 
-#### Realtime Parameter Automation Ring (`PARAM-AUTOMATION`) · 2026-09-01 00:30
+#### `nexus-wrap` Plugin Wrapper & In-DAW Loopback Bridge (`NEXUS-WRAP`) · 2026-09-01 00:37 · koyzxqvo
+
+**CLAP plugin wrapper, inner plugin hosting bridge, and live in-DAW loopback MCP/REST server** (`nexus-wrap`).
+- **CLAP Plugin Interface (`crates/nexus-wrap`)**: Implemented `NexusWrapPlugin` with `clack-plugin`, declaring `PluginAudioPorts` (stereo in/out), `PluginNotePorts` (CLAP + MIDI note dialects), `PluginParams` (parameter reflection and bidirectional DAW automation), and `PluginState` (state persistence).
+- **Inner Plugin Hosting Bridge (`nexus-wrap::bridge`)**: Wraps and executes any inner CLAP/VST3 plugin using `nexus-host`, routing audio/MIDI processing in a realtime-safe `ProcessBlock` and exposing inner state/presets/parameters to `nexus-tools` via `MainThreadHost`.
+- **In-DAW Loopback Servers (`nexus-wrap::server`)**: Spawns background worker thread starting loopback REST server on port 9996 (`http://127.0.0.1:9996/debug`) and MCP server on port 9997 (`http://127.0.0.1:9997/mcp`) so external AI agents can connect and interact with active DAW sessions.
+- **DAW State Envelope (`nexus-wrap::state`)**: Implemented `WrapStateEnvelope` preserving inner plugin identity and raw binary state blobs across DAW project saves and reloads.
+
+#### Linux Cross-Platform Support & Docker Setup (`LINUX-DOCKER`) · 2026-09-01 00:35 · wnlyruwx
+
+**Standard Linux plugin search paths, POSIX dynamic module loader, and containerized CI/agent environment** (`nexus-host`, `nexus-mcp`).
+- **Linux Discovery Paths (`nexus-host::discovery::paths`)**: Added standard Linux paths for CLAP (`~/.clap`, `/usr/lib/clap`, `/usr/local/lib/clap`) and VST3 (`~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`).
+- **POSIX VST3 Module Loader (`vst3/module/linux.rs`)**: Implemented `dlopen`/`dlsym` dynamic module loader locating Linux `.so` binaries under `Contents/x86_64-linux/` or bundle roots and binding `GetPluginFactory`, `ModuleEntry`, and `ModuleExit`.
+- **Target Compilation Gating**: Cleanly gated macOS-specific AppKit window parenting behind `#[cfg(target_os = "macos")]`.
+- **Docker Setup & Documentation**: Created multi-stage `Dockerfile` and `docker-compose.yml` for headless container testing and running `nexus-mcp --port 9997`, with comprehensive documentation in [`docs/guides/LINUX.md`](docs/guides/LINUX.md).
+
+#### Realtime Parameter Automation Ring (`PARAM-AUTOMATION`) · 2026-09-01 00:30 · nprppvmq
 
 **Lock-free parameter change ring (`rtrb`), CLAP & VST3 realtime event pipelines, and offline automation curve evaluation** (`nexus-host`).
 - **`ParamChange` SPSC Ring (`host.rs`, `PluginInstance::activate`)**: Defined `ParamChange { id, value, offset_frames }`. `PluginInstance::activate` instantiates a lock-free 1024-capacity SPSC ring using `rtrb`, exposing the `rtrb::Producer<ParamChange>` to the host via `param_producer()`, `take_param_producer()`, and `set_param()`.
