@@ -14,7 +14,7 @@ use crate::keyboard::{KeyEvent, VirtualKeyboard};
 use crate::menu::{AppMenu, MenuAction};
 
 pub struct NexusApp {
-    host: Host,
+    pub(crate) host: Host,
     menu: AppMenu,
     keyboard: VirtualKeyboard,
     pub(crate) engine: Option<Engine>,
@@ -29,7 +29,7 @@ pub struct NexusApp {
     pub(crate) loaded: Option<PluginRef>,
     status: String,
     /// All discovered plugins, for the searchable finder palette.
-    plugins: Vec<PluginRef>,
+    pub(crate) plugins: Vec<PluginRef>,
     /// Bundles discovery found but could not probe, surfaced in the UI.
     scan_failures: Vec<CatalogFailure>,
     /// Whether the finder palette is open, and its current filter text.
@@ -180,7 +180,7 @@ impl NexusApp {
         self.instance = Some(instance);
     }
 
-    fn load_plugin(&mut self, plugin: &PluginRef) {
+    pub(crate) fn load_plugin(&mut self, plugin: &PluginRef) {
         match self.host.load(plugin) {
             Ok(instance) => {
                 self.loaded = Some(plugin.clone());
