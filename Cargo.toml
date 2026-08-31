@@ -26,8 +26,11 @@ hound = "3.5"
 rmcp = { version = "0.9.1", features = ["server", "transport-streamable-http-server", "transport-io"] }
 
 # CLAP hosting via clack (tracks the main branch, like droplets).
-clack-host = { git = "https://github.com/prokopyl/clack.git" }
-clack-extensions = { git = "https://github.com/prokopyl/clack.git", features = ["clack-host", "all-extensions", "raw-window-handle_06"] }
+clack-host = { git = "https://github.com/prokopyl/clack.git", rev = "f874e858ad576c601367b3038af5088a4e671744" }
+clack-plugin = { git = "https://github.com/prokopyl/clack.git", rev = "f874e858ad576c601367b3038af5088a4e671744" }
+clack-extensions = { git = "https://github.com/prokopyl/clack.git", rev = "f874e858ad576c601367b3038af5088a4e671744", features = ["clack-host", "clack-plugin", "all-extensions", "raw-window-handle_06"] }
+
+
 crossbeam-channel = "0.5"
 # Editor embedding: parent a plugin's view into a host window. Matches the
 # version clack (raw_window_handle_06) and eframe use.

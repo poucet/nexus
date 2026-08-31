@@ -23,4 +23,15 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 nexus-host.workspace = true
+nexus-tools.workspace = true
+nexus-rest.workspace = true
+nexus-mcp.workspace = true
+clack-plugin.workspace = true
+clack-extensions.workspace = true
+crossbeam-channel.workspace = true
 log.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+

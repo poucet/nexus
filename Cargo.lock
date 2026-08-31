@@ -902,7 +902,7 @@ dependencies = [
 [[package]]
 name = "clack-common"
 version = "0.1.0"
-source = "git+https://github.com/prokopyl/clack.git#f874e858ad576c601367b3038af5088a4e671744"
+source = "git+https://github.com/prokopyl/clack.git?rev=f874e858ad576c601367b3038af5088a4e671744#f874e858ad576c601367b3038af5088a4e671744"
 dependencies = [
  "bitflags 2.12.1",
  "clap-sys",
@@ -911,11 +911,12 @@ dependencies = [
 [[package]]
 name = "clack-extensions"
 version = "0.1.0"
-source = "git+https://github.com/prokopyl/clack.git#f874e858ad576c601367b3038af5088a4e671744"
+source = "git+https://github.com/prokopyl/clack.git?rev=f874e858ad576c601367b3038af5088a4e671744#f874e858ad576c601367b3038af5088a4e671744"
 dependencies = [
  "bitflags 2.12.1",
  "clack-common",
  "clack-host",
+ "clack-plugin",
  "clap-sys",
  "raw-window-handle",
 ]
@@ -923,12 +924,21 @@ dependencies = [
 [[package]]
 name = "clack-host"
 version = "0.1.0"
-source = "git+https://github.com/prokopyl/clack.git#f874e858ad576c601367b3038af5088a4e671744"
+source = "git+https://github.com/prokopyl/clack.git?rev=f874e858ad576c601367b3038af5088a4e671744#f874e858ad576c601367b3038af5088a4e671744"
 dependencies = [
  "clack-common",
  "clap-sys",
  "libloading",
  "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "clack-plugin"
+version = "0.1.0"
+source = "git+https://github.com/prokopyl/clack.git?rev=f874e858ad576c601367b3038af5088a4e671744#f874e858ad576c601367b3038af5088a4e671744"
+dependencies = [
+ "clack-common",
+ "clap-sys",
 ]
 
 [[package]]
@@ -3062,8 +3072,18 @@ dependencies = [
 name = "nexus-wrap"
 version = "0.2.0"
 dependencies = [
+ "base64",
+ "clack-extensions",
+ "clack-plugin",
+ "crossbeam-channel",
  "log",
  "nexus-host",
+ "nexus-mcp",
+ "nexus-rest",
+ "nexus-tools",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

@@ -1,27 +1,23 @@
 //! # nexus-wrap
 //!
-//! A VST3/CLAP plugin that itself hosts another VST3/CLAP plugin, letting any
-//! DAW load a wrapped plugin through `nexus-wrap`.
+//! A CLAP/VST3 plugin wrapper that hosts an inner CLAP/VST3 plugin.
 //!
-//! Built on top of [`nexus_host`], this crate exposes the plugin entry points
-//! that a DAW expects and forwards audio and events to the hosted plugin.
+//! Exposes the inner plugin's audio, MIDI, parameter controls, and state to the
+//! host DAW, while hosting loopback MCP (port 9997) and REST (port 9996)
+//! servers in the background for AI agent pair programming.
 
-use nexus_host::Host;
+pub mod bridge;
+pub mod plugin;
+pub mod server;
+pub mod state;
 
-/// Bridges the outer plugin instance to an inner hosted plugin.
-///
-/// Still a stub: the format-specific export macros (CLAP/VST3 entry points)
-/// will be wired up here.
-#[derive(Debug, Default)]
-pub struct Wrapper {
-    _host: Host,
-}
+pub use bridge::InnerPluginState;
+pub use plugin::{NexusWrapAudioProcessor, NexusWrapMainThread, NexusWrapPlugin, NexusWrapShared};
+pub use server::start_servers;
+pub use state::WrapStateEnvelope;
 
-impl Wrapper {
-    /// Create a new wrapper backed by a fresh host.
-    pub fn new() -> Self {
-        Self {
-            _host: Host::new(),
-        }
-    }
-}
+use clack_plugin::entry::SinglePluginEntry;
+use clack_plugin::clack_export_entry;
+
+// Export the CLAP plugin entry point
+clack_export_entry!(SinglePluginEntry<NexusWrapPlugin>);
