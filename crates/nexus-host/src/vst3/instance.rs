@@ -11,8 +11,8 @@ use std::path::Path;
 use vst3_sdk::Steinberg::Vst::{
     BusDirection, BusDirections_, BusInfo, IAudioProcessor, IAudioProcessorTrait, IComponent,
     IComponentTrait, IConnectionPoint, IConnectionPointTrait, IEditController, IEditControllerTrait,
-    MediaType, MediaTypes_, ProcessModes_, ProcessSetup, SpeakerArr, SpeakerArrangement,
-    SymbolicSampleSizes_,
+    IUnitInfoTrait, MediaType, MediaTypes_, ProcessModes_, ProcessSetup, SpeakerArr,
+    SpeakerArrangement, SymbolicSampleSizes_,
 };
 use vst3_sdk::Steinberg::{FUnknown, IBStream, IPluginBaseTrait, TUID, kResultOk};
 use vst3_sdk::{ComPtr, ComWrapper};
@@ -203,6 +203,95 @@ impl PluginInstance for Vst3PluginInstance {
         }
     }
 
+    fn presets(&mut self) -> Vec<crate::host::PresetInfo> {
+        let unit_info: Option<ComPtr<vst3_sdk::Steinberg::Vst::IUnitInfo>> = self
+            .controller
+            .as_ref()
+            .and_then(|c| c.cast::<vst3_sdk::Steinberg::Vst::IUnitInfo>())
+            .or_else(|| self.component.cast::<vst3_sdk::Steinberg::Vst::IUnitInfo>());
+
+        let Some(unit_info) = unit_info else {
+            return Vec::new();
+        };
+
+        let mut out = Vec::new();
+        let list_count = unsafe { unit_info.getProgramListCount() };
+        for list_idx in 0..list_count {
+            let mut list_info: vst3_sdk::Steinberg::Vst::ProgramListInfo = unsafe { std::mem::zeroed() };
+            if unsafe { unit_info.getProgramListInfo(list_idx, &mut list_info) } == kResultOk {
+                for prog_idx in 0..list_info.programCount {
+                    let mut name_buf: vst3_sdk::Steinberg::Vst::String128 = [0; 128];
+                    if unsafe {
+                        unit_info.getProgramName(list_info.id, prog_idx, &mut name_buf)
+                    } == kResultOk
+                    {
+                        let name = string_from_utf16(&name_buf);
+                        out.push(crate::host::PresetInfo {
+                            index: prog_idx as u32,
+                            name,
+                            program_list_id: Some(list_info.id),
+                            category: None,
+                        });
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    fn load_preset(&mut self, target: &str) -> Result<(), HostError> {
+        let presets = self.presets();
+        let found = if let Ok(idx) = target.parse::<u32>() {
+            presets.iter().find(|p| p.index == idx)
+        } else {
+            presets
+                .iter()
+                .find(|p| p.name.eq_ignore_ascii_case(target))
+                .or_else(|| presets.iter().find(|p| p.name.to_lowercase().contains(&target.to_lowercase())))
+        };
+
+        let Some(preset) = found else {
+            return Err(HostError::Load(format!(
+                "preset {target:?} not found (plugin reports {} presets)",
+                presets.len()
+            )));
+        };
+
+        let controller = self
+            .controller
+            .as_ref()
+            .ok_or_else(|| HostError::Load("plugin has no edit controller".into()))?;
+
+        // Find the program change parameter in controller
+        let count = unsafe { controller.getParameterCount() };
+        let mut prog_param_id = None;
+        for i in 0..count {
+            let mut info: vst3_sdk::Steinberg::Vst::ParameterInfo = unsafe { std::mem::zeroed() };
+            if unsafe { controller.getParameterInfo(i, &mut info) } == kResultOk {
+                if info.flags & vst3_sdk::Steinberg::Vst::ParameterInfo_::ParameterFlags_::kIsProgramChange != 0 {
+                    prog_param_id = Some(info.id);
+                    break;
+                }
+            }
+        }
+
+        let param_id = prog_param_id.ok_or_else(|| {
+            HostError::Load("plugin has no program change parameter".into())
+        })?;
+        let total = presets
+            .iter()
+            .filter(|x| x.program_list_id == preset.program_list_id)
+            .count();
+        let norm = if total > 1 {
+            preset.index as f64 / (total - 1) as f64
+        } else {
+            0.0
+        };
+
+        unsafe { controller.setParamNormalized(param_id, norm) };
+        Ok(())
+    }
+
     fn pump(&mut self) {
         if let Some(editor) = &self.editor {
             editor.fit();
@@ -319,4 +408,13 @@ fn parse_cid(hex: &str) -> Option<TUID> {
         *byte = u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok()? as i8;
     }
     Some(cid)
+}
+
+fn string_from_utf16(buf: &[vst3_sdk::Steinberg::Vst::TChar]) -> String {
+    let units: Vec<u16> = buf
+        .iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as u16)
+        .collect();
+    String::from_utf16_lossy(&units)
 }

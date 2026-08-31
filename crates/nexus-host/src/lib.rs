@@ -14,16 +14,20 @@ pub mod discovery;
 /// A native window that hosts a plugin's editor view (shared by the CLAP and
 /// VST3 backends).
 pub mod editor_window;
+pub use simply_fugue as fugue;
 pub mod host;
 pub mod preset;
 pub mod process;
+pub mod render;
 pub mod vst3;
 #[cfg(feature = "ui")]
 pub mod ui;
 
 pub use discovery::catalog::{CatalogFailure, PluginCatalog, PluginRef};
-pub use preset::Preset;
+pub use fugue::{CompositeFugue, FugueDefinition, FugueEvent, TimedFugueEvent};
 pub use host::{
     AudioConfig, AudioProcessor, Host, HostError, ParamInfo, PluginDescriptor, PluginFormat,
     PluginInstance, VoiceInfo,
 };
+pub use preset::Preset;
+pub use render::{render_offline, RenderOptions, RenderResult};

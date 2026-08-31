@@ -94,6 +94,15 @@ pub struct AudioConfig {
     pub max_block_frames: usize,
 }
 
+/// Information about a plugin preset / program reported directly by the plugin.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PresetInfo {
+    pub index: u32,
+    pub name: String,
+    pub program_list_id: Option<i32>,
+    pub category: Option<String>,
+}
+
 /// A loaded plugin, owned on the **main thread**.
 ///
 /// Holds the main-thread concerns (params, state, editor — added per aspect)
@@ -124,6 +133,17 @@ pub trait PluginInstance {
     fn param_value_to_text(&mut self, id: u32, value: f64) -> Option<String> {
         let _ = (id, value);
         None
+    }
+
+    /// Enumerate presets / programs reported directly by the loaded plugin.
+    fn presets(&mut self) -> Vec<PresetInfo> {
+        Vec::new()
+    }
+
+    /// Load a preset / program by name or index using the plugin's native API.
+    fn load_preset(&mut self, target: &str) -> Result<(), HostError> {
+        let _ = target;
+        Err(HostError::Load("plugin does not support program selection".into()))
     }
 
     /// Serialize the plugin's full state to an opaque chunk. The bytes are
