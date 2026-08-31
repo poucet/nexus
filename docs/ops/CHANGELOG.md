@@ -4,12 +4,19 @@
 
 | Dates | Tag | |
 |---|---|---|
-| 2026-08-26 → … | — | **[Unreleased](#unreleased)** — 0.2 State tools in progress |
+| 2026-09-01 → … | — | **[Unreleased](#unreleased)** — 0.3 exploration & wrap |
+| 2026-08-26 → 09-01 | `v0.2.0` | [Milestone 0.2: State Tools & AI Sampler](#v020--state-tools--ai-sampler) — MCP server, driver-free offline rendering, Fugue sequencing, codecs |
 | 2026-06-01 → 08-26 | `v0.1.0` | [Milestone 0.1: Load & Hear](#v010--load--hear) — CLAP/VST3 hosting engine + standalone egui app |
 
 ---
 
 ## Unreleased
+
+---
+
+## v0.2.0 — State Tools & AI Sampler
+
+**Tagged `v0.2.0` · 2026-09-01 00:15 · quurmwqx**
 
 #### Generic VST3/CLAP Presets & AI Offline Sampling Test (`GENERIC-PRESETS-TEST`) · 2026-09-01 00:15 · qplzmxnr
 
