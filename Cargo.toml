@@ -15,11 +15,15 @@ rust-version = "1.90"
 nexus-host = { path = "crates/nexus-host" }
 nexus-tools = { path = "crates/nexus-tools" }
 nexus-rest = { path = "crates/nexus-rest" }
+nexus-mcp = { path = "crates/nexus-mcp" }
+simply-fugue = { path = "crates/simply-fugue" }
 
 # Shared third-party dependencies are pinned here so every crate in the
 # workspace resolves to the same version.
 thiserror = "2"
 log = "0.4"
+hound = "3.5"
+rmcp = { version = "0.9.1", features = ["server", "transport-streamable-http-server", "transport-io"] }
 
 # CLAP hosting via clack (tracks the main branch, like droplets).
 clack-host = { git = "https://github.com/prokopyl/clack.git" }
