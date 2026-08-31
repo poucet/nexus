@@ -11,7 +11,21 @@
 
 ## Unreleased
 
-#### REST frontend + debug UI over the tool registry (`REST-DEBUG`) · 2026-08-26 08:40 · qqkwzolo
+#### Generic VST3/CLAP Presets & AI Offline Sampling Test (`GENERIC-PRESETS-TEST`) · 2026-09-01 00:15 · qplzmxnr
+
+**Native VST3 / CLAP program inspection and driver-free AI sampling** (`nexus-host`, `nexus-tools`, `nexus-mcp`).
+- **Generic VST3 & CLAP Preset Management (`PluginInstance::presets` / `load_preset`)**: `PluginInstance` now provides generic methods `presets()` and `load_preset()` implemented natively for VST3 via `IUnitInfo` / `IEditController` program lists and parameter mappings, and for CLAP via preset extensions and program changes. Removed all filesystem and vendor-specific preset scanning.
+- **DTO Modernization (`nexus-tools::types`)**: Standardized `PresetItem` (`index`, `name`, `category`, `program_list_id`) and `LoadPresetResponse` (`name`, `index`, `loaded`).
+- **End-to-End AI Sampling Verified (`sample_vital.rs` / `sample_vital_clap.rs`)**: Verified complete autonomous workflow via `nexus-mcp`: `list_plugins` -> `load_plugin` -> `list_presets` -> parameter inspection -> 5-second offline audio render to a 32-bit float 48 kHz WAV file (`vital_5s_sample.wav`).
+
+#### AI Sampler, offline rendering, Fugue playback & MCP Server (`AI-SAMPLER-MCP`) · 2026-08-31 23:30 · wvluppyw
+
+**Driver-free offline plugin sampling, Droplets Fugue playback, catalog/preset/param tools, and standalone MCP server** (`nexus-host`, `nexus-tools`, `nexus-app`, `nexus-mcp`, `nexus-rest`).
+- **Offline Audio Rendering (`nexus-host::render`)**: Driver-free offline rendering engine (`render_offline`) evaluating arbitrary plugins at maximum CPU speed without needing an audio driver or hardware interface. Renders 32-bit float 48 kHz WAV files via `hound` and computes audio metrics (`peak_db`, `rms_db`, `duration_s`, `is_silent`).
+- **Droplets Fugue Musical Model (`nexus-host::fugue`)**: Full implementation of Droplets' Fugue sequencing model supporting compact note arrays `[beat, "C3", duration, velocity, channel]`, DAW pitch notation (`C3` = MIDI 60, `C-2` = 0), CC automation, and parameter curves (`linear`, `exp`, `log`, `none`).
+- **Tool Surface Expansion (`nexus-tools`)**: Added 10 new high-level tools: `list_plugins`, `load_plugin`, `list_presets`, `load_preset`, `save_preset`, `list_params`, `get_params`, `set_params`, `play` (live playback), and `render_audio` (offline fast sampling).
+- **Standalone MCP Server (`crates/nexus-mcp`)**: Model Context Protocol server exposing the full Nexus tool registry to AI coding agents over both stdio (`nexus-mcp --stdio`) and streamable HTTP (`nexus-mcp --port 9997`). Includes a headless runner that scans the plugin catalog and renders audio autonomously.
+- **REST Debug UI Upgrades (`nexus-rest`)**: Added quick "Sample C3" and "Play C3" buttons, prefilled examples for all new tools, and an integrated HTML5 `<audio controls autoplay>` player rendering base64 WAVs directly in the browser.
 
 **In-process REST API server and browser-based debug UI** (`crates/nexus-rest`, Feature 3, T13–T14).
 - `crates/nexus-rest`: axum HTTP server running on dedicated background thread with its own tokio runtime. Binds loopback-only (dual 127.0.0.1 and `[::1]`) on port 9996 (or `NEXUS_REST_PORT`).

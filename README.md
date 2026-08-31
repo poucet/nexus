@@ -25,8 +25,12 @@ This is a Cargo workspace. Each crate is a layer on top of the one before it:
 
 | Crate | Kind | Purpose |
 | --- | --- | --- |
-| [`nexus-host`](crates/nexus-host) | library | The engine that discovers, loads, and runs VST3/CLAP plugins. No device I/O. |
-| [`nexus-app`](crates/nexus-app) | binary (`nexus-app`) | Standalone host app: egui UI, CPAL audio out, MIDI in, plugin browser + editor windows. |
+| [`nexus-host`](crates/nexus-host) | library | The engine that discovers, loads, and runs VST3/CLAP plugins. Fast offline rendering without audio drivers. |
+| [`simply-fugue`](crates/simply-fugue) | library | Shared Fugue musical definition, compact note shorthand, and pitch parsing (`C3` = 60). |
+| [`nexus-tools`](crates/nexus-tools) | library | Transport-agnostic tool traits, registry, state codecs, snapshot store, and main-thread bridge. |
+| [`nexus-mcp`](crates/nexus-mcp) | binary (`nexus-mcp`) | Standalone MCP server exposing all tools to AI coding agents via stdio or streamable HTTP. |
+| [`nexus-rest`](crates/nexus-rest) | library | In-process REST API server and browser-based debug UI (`http://127.0.0.1:9996/debug`). |
+| [`nexus-app`](crates/nexus-app) | binary (`nexus-app`) | Standalone GUI host app: egui UI, CPAL audio out, MIDI in, plugin browser + editor windows. |
 | [`nexus-wrap`](crates/nexus-wrap) | cdylib + lib | A VST3/CLAP plugin that itself hosts another plugin — load any wrapped plugin inside a DAW. |
 
 ```
@@ -35,17 +39,66 @@ nexus/
 ├── .cargo/config.toml    # cargo aliases for the bundler (cargo bundle, …)
 ├── xtask/                # build helper: compiles + bundles the plugin
 └── crates/
-    ├── nexus-host/       # hosting engine (the foundation)
-    ├── nexus-app/        # standalone host app (the 0.1 deliverable)
+    ├── simply-fugue/     # canonical fugue musical performance schema
+    ├── nexus-host/       # hosting & offline rendering engine (the foundation)
+    ├── nexus-tools/      # tool definitions, state codecs & snapshots
+    ├── nexus-mcp/        # standalone MCP server for AI agents (stdio / HTTP)
+    ├── nexus-rest/       # in-process REST server & debug UI
+    ├── nexus-app/        # standalone GUI host app
     └── nexus-wrap/       # plugin that wraps/hosts another plugin
 ```
 
-> **Status:** 0.1 "Load & Hear" works on macOS — `nexus-app` scans the standard
-> plugin folders, loads CLAP and VST3 plugins, plays them through the default
-> audio output (hardware MIDI or the built-in virtual keyboard), opens their
-> editors, and saves/recalls presets. `nexus-wrap` is a stub.
+---
 
-## Quickstart
+## Running for AI & Headless Standalone (MCP Server)
+
+Nexus provides a dedicated **standalone binary (`nexus-mcp`)** built specifically for AI agents (Claude Code, Claude Desktop, Cursor, Antigravity).
+
+It runs **completely headless without opening GUI windows or requiring an audio driver/interface**, allowing an AI agent to autonomously discover, load, configure, perform, and sample arbitrary VST3 and CLAP audio plugins.
+
+### 1. Stdio Mode (Claude Desktop / Claude Code / Cursor / Antigravity)
+
+Build the release binary:
+```sh
+cargo build --release --bin nexus-mcp
+```
+
+Add Nexus to your client configuration (e.g. `claude_desktop_config.json` or `.mcp.json`):
+```json
+{
+  "mcpServers": {
+    "nexus": {
+      "command": "/path/to/nexus/target/release/nexus-mcp",
+      "args": ["--stdio"]
+    }
+  }
+}
+```
+
+Or run directly with cargo:
+```sh
+cargo run --bin nexus-mcp -- --stdio
+```
+
+### 2. Streamable HTTP Mode
+
+To serve the MCP endpoint over local HTTP:
+```sh
+cargo run --bin nexus-mcp -- --port 9997
+```
+The server binds to `127.0.0.1:9997` and `[::1]:9997`, serving the MCP endpoint at `http://127.0.0.1:9997/mcp`.
+
+### 3. What the AI Can Do Headlessly
+
+- **`list_plugins` / `load_plugin`**: Discover installed CLAP and VST3 plugins from standard paths and load any plugin into memory.
+- **`list_presets` / `load_preset` / `save_preset`**: Browse, load, or save `.nexuspreset` files.
+- **`list_params` / `get_params` / `set_params`**: Inspect and tweak plugin parameters.
+- **`render_audio`**: Render an offline musical performance (notes, CC automation, parameter ramps) at maximum CPU speed and receive 32-bit float 48 kHz WAV audio (as base64 or saved to disk) along with audio metrics (`peak_db`, `rms_db`, `duration_s`, `is_silent`).
+- **`decode_state` / `edit_state` / `diff_state` / `snapshot_state`**: Inspect structured plugin state and apply JSON-pointer edits.
+
+---
+
+## Interactive GUI Mode (with REST Debug UI)
 
 Requires a recent stable Rust toolchain (edition 2024, `rustc` ≥ 1.90).
 macOS only for now.

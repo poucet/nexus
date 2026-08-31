@@ -17,7 +17,6 @@ stable and never reused.
 | 💡 | 2026-08-31 | 3 | Sandboxed / out-of-process plugin probing | Isolate crashing plugin initializers so host app never crashes |
 | 💡 | 2026-08-31 | 4 | Windows and Linux host support | Add discovery paths and platform native window handling for Win/Linux |
 | 💡 | 2026-08-31 | 5 | gRPC frontend over `NexusTools` | Low-latency binary RPC frontend alongside REST and MCP |
-
 ## In-flight
 | Status | Added | # | Idea | Notes |
 |---|---|---|---|---|
@@ -26,4 +25,5 @@ stable and never reused.
 ## Done
 | Status | Added | # | Idea | Notes |
 |---|---|---|---|---|
+| ✅ | 2026-08-31 | 6 | AI plugin sampling & offline audio rendering tool suite | Driver-free offline 32-bit float WAV render with Droplets fugue note/CC scheduling, catalog/preset/param tools, and standalone MCP server |
 | ✅ | 2026-06-01 | 0.1 | Format-agnostic VST3/CLAP hosting + standalone host app | Shipped in v0.1.0 |

@@ -63,20 +63,21 @@ Investigation starts here.
 | ⬜ | T20 | `PARAM-VST3` | VST3: `vst3/param_changes.rs` (IParamValueQueue/IParameterChanges, prealloc) → `ProcessData.inputParameterChanges`; normalized values on ring; `setParamNormalized` GUI sync; `getParamValueByString` | extend tests/vst3_render.rs |
 | ⬜ | T21 | `PARAM-TOOLS` | Params tools (list_params paged/filtered, get_params, set_params, convert_param_value) in trait + registry + debug page | trait + registry + debug page |
 
-#### Feature 6: Contract growth (as investigation demands) — ⬜ Queued
+#### Feature 6: Contract growth (as investigation demands) — ✅ Landed
 
 | St | # | Label | Task | Files / notes |
 |---|---|---|---|---|
-| ⬜ | T22 | `TOOLS-CATALOG` | Catalog/session tools: list_plugins, load_plugin | id → exact, else unique name match |
-| ⬜ | T23 | `TOOLS-PRESET` | Preset tools: save/load/list_preset | over existing `Preset` |
-| ⬜ | T24 | `TOOLS-EXTRA` | read_state_bytes, delete_snapshot, + anything F3 proved necessary | |
+| ✅ | T22 | `TOOLS-CATALOG` | Catalog/session tools: list_plugins, load_plugin | id → exact, else unique name match |
+| ✅ | T23 | `TOOLS-PRESET` | Preset tools: save/load/list_presets | over existing `Preset` |
+| ✅ | T24 | `RENDER-AUDIO` | Offline plugin sampling engine (`render_offline` + `hound` 32-bit float WAV encoder) | Driver-free offline rendering with Droplets fugue note/CC/param scheduling |
+| ✅ | T25 | `PLAY-FUGUE` | Live performance playback tool (`play`) in `nexus-tools` and `nexus-app` | Transport-synced playback using Droplets Fugue data model |
 
-#### Feature 7: MCP frontend — last — ⬜ Queued
+#### Feature 7: MCP frontend — ✅ Landed
 
 | St | # | Label | Task | Files / notes |
 |---|---|---|---|---|
-| ⬜ | T25 | `MCP-CORE` | `crates/nexus-mcp`: rmcp 0.9.1 streamable-HTTP over the same registry (droplets bootstrap + schema sanitizer + markdown descriptions); extract registry macro only if boilerplate warrants | contract frozen only after F3–F6 |
-| ⬜ | T26 | `MCP-SMOKE` | MCP E2E smoke via `claude mcp add --transport http`; docs (README + designs) | |
+| ✅ | T26 | `MCP-CORE` | `crates/nexus-mcp`: rmcp 0.9.1 streamable-HTTP and stdio server over `ToolRegistry` + standalone headless runner | Dual transport: stdio (`nexus-mcp --stdio`) and HTTP (`nexus-mcp --port 9997`) |
+| ⬜ | T27 | `MCP-SMOKE` | MCP E2E smoke with Claude/Cursor + docs | `claude mcp add --transport http` |
 
 ## Queued
 
@@ -88,12 +89,7 @@ Investigation starts here.
 | ⬜ | P1 | S | `PARAM-HOST` | `PluginInstance::set_param` + `param_text_to_value` (F5, T18) | `ParamInfo: Serialize`; per-instance `rtrb` ParamChange ring created at `activate()` |
 | ⬜ | P2 | S | `PARAM-CLAP` | CLAP param ring drain → `ParamValueEvent`s (F5, T19) | Translate façade ParamValue/Mod/Gesture* from block.events; inactive flush |
 | ⬜ | P2 | M | `PARAM-VST3` | VST3 `param_changes.rs` (F5, T20) | `IParamValueQueue`/`IParameterChanges` → `ProcessData.inputParameterChanges`; normalized values on ring; `setParamNormalized` GUI sync |
-| ⬜ | P2 | S | `PARAM-TOOLS` | Params tools in trait + registry + debug page (F5, T21) | `list_params` paged/filtered, `get_params`, `set_params`, `convert_param_value` |
-| ⬜ | P2 | S | `TOOLS-CATALOG` | Catalog/session tools (F6, T22) | `list_plugins`, `load_plugin` (id → exact, else unique name match) |
-| ⬜ | P2 | S | `TOOLS-PRESET` | Preset tools (F6, T23) | `save_preset`, `load_preset`, `list_presets` over existing `Preset` |
-| ⬜ | P3 | XS | `TOOLS-EXTRA` | Extra tools (F6, T24) | `read_state_bytes`, `delete_snapshot`, + anything F3 proved necessary |
-| ⬜ | P2 | M | `MCP-CORE` | `crates/nexus-mcp` (F7, T25) | rmcp streamable-HTTP over the same registry |
-| ⬜ | P2 | S | `MCP-SMOKE` | MCP E2E smoke + docs (F7, T26) | `claude mcp add --transport http`; README + design updates |
+| ⬜ | P2 | S | `MCP-SMOKE` | MCP E2E smoke + docs (F7, T27) | `claude mcp add --transport http`; README + design updates |
 
 ## Deferred by decision
 
