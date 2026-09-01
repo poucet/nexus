@@ -42,6 +42,14 @@ Reconstruction is **not** a one-shot "text prompt to finished sound" translation
 
 ---
 
+### 1.3 Ground Truth: AI Perception via Tools & Autonomous Exploration
+A critical reality governs our entire AI sound design architecture:
+- **LLMs Do Not Understand Musical Audio**: Audio AI models (even those with audio token inputs) understand audio primarily as **speech** and voice phonetics. They are blind to micro-timbral nuances like high-order saturation harmonics, all-pass phase dispersion, resonance Q, and subtle transient attack curvature.
+- **Sensory Organs via Tools**: For an AI to perceive sound, it must be given **objective perceptual analysis tools** (multi-scale STFT, Hilbert envelope log-attack trackers, stiff-string inharmonicity estimators, SSM profiles). Crucially, the AI should be capable of **building and extending its own analysis tools** as new acoustic questions arise.
+- **Beyond Reconstruction: Autonomous Patch Exploration**: Equipping the AI with perceptual tools enables not just recreating existing patches, but **autonomously exploring high-dimensional parameter spaces** to discover novel, acoustically rich, and musically compelling patch ideas.
+
+---
+
 ## 2. User Personas
 
 | Persona | Role & Background | Needs & Goals | Frustrations / Pain Points |

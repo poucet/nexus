@@ -99,4 +99,3 @@ When `nexus-app` is running with the UI open and CPAL audio active, calling `ren
 2. Instantiating a headless clone `PluginInstance` on a background worker thread.
 3. Loading the state (`clone.load_state(&state)`), activating the offline processor, running the render block-by-block, and tearing down the clone.
 4. When running purely headless (e.g. `nexus-mcp` standalone binary), `Host::load` runs directly without any GUI overhead.
-
