@@ -4,13 +4,20 @@
 
 | Dates | Tag | |
 |---|---|---|
-| 2026-09-01 → … | — | **[Unreleased](#unreleased)** — 0.3 exploration & wrap |
+| 2026-09-01 → … | — | **[Unreleased](#unreleased)** — 0.4 state exploration & AI synthesis |
+| 2026-09-01 | `v0.3.0` | [Milestone 0.3: Plugin Wrapper & Automation](#v030--in-daw-wrapper-parameter-automation--cross-platform-linux) — `nexus-wrap` CLAP plugin, realtime parameter ring, Linux/Docker support, AI patch reconstruction design |
 | 2026-08-26 → 09-01 | `v0.2.0` | [Milestone 0.2: State Tools & AI Sampler](#v020--state-tools--ai-sampler) — MCP server, driver-free offline rendering, Fugue sequencing, codecs |
 | 2026-06-01 → 08-26 | `v0.1.0` | [Milestone 0.1: Load & Hear](#v010--load--hear) — CLAP/VST3 hosting engine + standalone egui app |
 
 ---
 
 ## Unreleased
+
+---
+
+## v0.3.0 — In-DAW Wrapper, Parameter Automation & Cross-Platform Linux
+
+**Tagged `v0.3.0` · 2026-09-01 01:20**
 
 #### `nexus-wrap` Plugin Wrapper & In-DAW Loopback Bridge (`NEXUS-WRAP`) · 2026-09-01 00:37 · koyzxqvo
 

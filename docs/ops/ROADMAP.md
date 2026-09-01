@@ -13,18 +13,18 @@ is on the board, otherwise ask and it gets specced.
 > is left is in the row) · 🎯 next up · ⬜ open, not scheduled anywhere.
 > Sizes: S ≈ a session · M ≈ a lane · L ≈ a lane plus design.
 
-## `v0.3.0` — State Exploration & Plugin Wrapper
+## `v0.4.0` — AI Patch Reconstruction & State Exploration
 
-Deep parameter-to-state diff probing, codec expansions, and hosting wrapper.
+Acoustic DNA extraction, Bayesian/differential parameter search, Flux modular synthesis bridge, and deep codec exploration.
 
 | St | Size | Item | Notes |
 |---|---|---|---|
-| 📋 | M | `INVESTIGATE` & Codec Expansion | Manual investigation pass (`INVESTIGATE`), `serum2`, `arturia` codecs |
-| 📋 | M | `PARAM-HOST` Realtime Set | Realtime parameter modulation ring for CLAP/VST3 audio processing |
-| ⬜ | L | `nexus-wrap` Plugin Wrapper | Ship host as CLAP/VST3 plugin forwarding extensions to inner plugins |
+| 📋 | L | `AI-RECONSTRUCT` AI Patch Reconstruction | Acoustic feature extraction (`simply-signal`) + Flux bridge per `AI_PATCH_RECONSTRUCTION_TECH.md` |
+| 📋 | M | `INVESTIGATE` & Codec Expansion | Manual investigation pass (`INVESTIGATE`), `serum2`, `arturia` binary codecs |
+| ⬜ | M | `WRAP-VST3` VST3 Wrapper Target | VST3 wrapper class factory alongside existing CLAP wrapper |
 | ⬜ | M | Full VST3/CLAP extension parity | `IPlugFrame::resizeView`, note expression, units, CLAP presets/discovery |
 
-## Later (`v0.4.0`+)
+## Later (`v0.5.0`+)
 
 - Diff-probing explorer (set param → snapshot → diff → bytes↔params mapping, content-anchored region addressing)
-- Cross-platform support (Windows/Linux discovery paths + editor windows)
+- Windows cross-platform support
