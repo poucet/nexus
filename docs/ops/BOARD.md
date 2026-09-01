@@ -9,27 +9,9 @@ Legend: 🚧 in flight · ✅ landed · ⏸ deferred.
 
 ## Milestones
 
-### 0.4 AI Audio Perception, Patch Exploration & Reconstruction (Nexus -> Flux)
+### 0.4 -  AI Patch Reconstruction & State Exploration
 
 Audio analysis tool building for LLMs, autonomous patch space exploration, acoustic feature extraction, and Flux modular synthesis reconstruction. Rationale and design: @docs/design/AI_AUDIO_PERCEPTION_AND_EXPLORATION.md, @docs/design/AI_PATCH_RECONSTRUCTION_CUJ.md, @docs/design/AI_PATCH_RECONSTRUCTION_TECH.md.
-
-#### Feature 1: Audio Analysis & Feature Extraction Tools (`nexus-tools`) — ⬜ Queued
-
-Analysis tools providing acoustic perception for AI models (MFCCs, spectral centroid, rolloff, flatness, harmonic-to-noise ratio, ADSR transient envelope tracking, pitch detection).
-
-| St | # | Label | Task | Files / notes |
-|---|---|---|---|---|
-| ⬜ | T28 | `AUDIO-ANALYSIS` | Feature extraction pipeline (MFCC, centroid, rolloff, flatness, HNR, envelope, pitch) returning structured acoustic descriptors | `crates/nexus-tools/src/analysis.rs`, `tools.rs`, `registry.rs` |
-| ⬜ | T29 | `AUDITION-DIFF` | Timbre difference scoring tool (`diff_audio` / `score_match`) comparing target sample against candidate reconstruction | `nexus-tools`, `simply-signal` |
-
-#### Feature 2: Patch Exploration & Flux Reconstruction — ⬜ Queued
-
-Autonomous search and exploration in synthesis parameter space.
-
-| St | # | Label | Task | Files / notes |
-|---|---|---|---|---|
-| ⬜ | T30 | `FLUX-BRIDGE` | Communication bridge between Nexus sampling host and Flux synthesizer engine | Socket/IPC bridge to Flux graph engine |
-| ⬜ | T31 | `PATCH-EXPLORATION` | Autonomous patch space explorer (MAP-Elites / evolutionary / Bayesian search loop) | Multi-objective loss balancing timbral and envelope fidelity |
 
 #### Feature 3: Verification & External MCP Harness — ⬜ Queued
 
@@ -41,11 +23,7 @@ Autonomous search and exploration in synthesis parameter space.
 
 | St | Pri | Size | Label | What | Notes |
 |---|---|---|---|---|---|
-| ⬜ | P1 | M | `AUDIO-ANALYSIS` | Audio feature extraction tools (MFCC, centroid, flatness, HNR, envelope, pitch) (F1, T28) | Gives AI sensory understanding of audio |
-| ⬜ | P1 | L | `PATCH-EXPLORATION` | Autonomous patch space exploration & search engine (F2, T31) | MAP-Elites / Bayesian parameter discovery |
-| ⬜ | P1 | M | `FLUX-BRIDGE` | Direct bridge to Flux modular synth engine (F2, T30) | Parameter mapping and graph mutation |
-| ⬜ | P2 | S | `AUDITION-DIFF` | Timbral and envelope similarity scoring tool (F1, T29) | A/B comparison and loss computation |
-| ⬜ | P2 | S | `MCP-SMOKE` | MCP E2E smoke verification + docs (F3, T27) | `claude mcp add --transport http`; README updates |
+
 
 ## Deferred by decision
 
