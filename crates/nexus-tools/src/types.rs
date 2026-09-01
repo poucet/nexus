@@ -536,6 +536,28 @@ pub struct SetParamsResponse {
     pub updated: Vec<ParamValueItem>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ConvertParamValueRequest {
+    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
+    pub instance: String,
+    pub id: u32,
+    /// Convert plain value to display text
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
+    /// Convert display text to plain value
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ConvertParamValueResponse {
+    pub id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_text: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Play (Live Fugue) & Render Audio (Offline Sampler)
 

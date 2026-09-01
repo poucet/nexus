@@ -66,6 +66,18 @@ pub trait MainThreadHost {
     fn set_params(&mut self, _params: &[crate::types::SetParamItem]) -> Result<Vec<crate::types::ParamValueItem>, ToolError> {
         Ok(Vec::new())
     }
+    fn convert_param_value(
+        &mut self,
+        id: u32,
+        _value: Option<f64>,
+        _text: Option<&str>,
+    ) -> Result<crate::types::ConvertParamValueResponse, ToolError> {
+        Ok(crate::types::ConvertParamValueResponse {
+            id,
+            value: None,
+            display_text: None,
+        })
+    }
     fn play(&mut self, _fugue: &nexus_host::fugue::CompositeFugue) -> Result<crate::types::PlayResponse, ToolError> {
         Ok(crate::types::PlayResponse {
             queued: true,
@@ -92,6 +104,7 @@ pub enum HostRequest {
     ListParams(Option<String>, Option<usize>, Option<usize>, oneshot::Sender<Result<crate::types::ListParamsResponse, ToolError>>),
     GetParams(Vec<u32>, oneshot::Sender<Result<Vec<crate::types::ParamValueItem>, ToolError>>),
     SetParams(Vec<crate::types::SetParamItem>, oneshot::Sender<Result<Vec<crate::types::ParamValueItem>, ToolError>>),
+    ConvertParamValue(u32, Option<f64>, Option<String>, oneshot::Sender<Result<crate::types::ConvertParamValueResponse, ToolError>>),
     Play(nexus_host::fugue::CompositeFugue, oneshot::Sender<Result<crate::types::PlayResponse, ToolError>>),
     RenderAudio(crate::types::RenderAudioRequest, oneshot::Sender<Result<crate::types::RenderAudioResponse, ToolError>>),
 }
@@ -174,6 +187,10 @@ impl HostBridge {
         self.call(|tx| HostRequest::SetParams(params, tx)).await?
     }
 
+    pub async fn convert_param_value(&self, id: u32, value: Option<f64>, text: Option<String>) -> Result<crate::types::ConvertParamValueResponse, ToolError> {
+        self.call(|tx| HostRequest::ConvertParamValue(id, value, text, tx)).await?
+    }
+
     pub async fn play(&self, fugue: nexus_host::fugue::CompositeFugue) -> Result<crate::types::PlayResponse, ToolError> {
         self.call(|tx| HostRequest::Play(fugue, tx)).await?
     }
@@ -222,6 +239,9 @@ pub fn handle(request: HostRequest, host: &mut dyn MainThreadHost) {
         }
         HostRequest::SetParams(params, reply) => {
             let _ = reply.send(host.set_params(&params));
+        }
+        HostRequest::ConvertParamValue(id, value, text, reply) => {
+            let _ = reply.send(host.convert_param_value(id, value, text.as_deref()));
         }
         HostRequest::Play(fugue, reply) => {
             let _ = reply.send(host.play(&fugue));

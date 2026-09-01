@@ -136,6 +136,10 @@ impl HostPluginInstance for ClapPluginInstance {
         crate::clap::params::value_to_text(&mut self.instance, id, value)
     }
 
+    fn param_text_to_value(&mut self, id: u32, text: &str) -> Option<f64> {
+        crate::clap::params::text_to_value(&mut self.instance, id, text)
+    }
+
     fn save_state(&mut self) -> Result<Vec<u8>, HostError> {
         crate::clap::state::save(&mut self.instance)
     }

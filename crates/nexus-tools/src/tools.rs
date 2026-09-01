@@ -54,6 +54,7 @@ pub trait NexusTools: Send + Sync {
     async fn list_params(&self, req: ListParamsRequest) -> Result<ListParamsResponse, ToolError>;
     async fn get_params(&self, req: GetParamsRequest) -> Result<GetParamsResponse, ToolError>;
     async fn set_params(&self, req: SetParamsRequest) -> Result<SetParamsResponse, ToolError>;
+    async fn convert_param_value(&self, req: ConvertParamValueRequest) -> Result<ConvertParamValueResponse, ToolError>;
 
     // -----------------------------------------------------------------------
     // Performance & Sampling

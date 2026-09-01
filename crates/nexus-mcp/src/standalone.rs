@@ -270,13 +270,43 @@ impl MainThreadHost for StandaloneHost {
         let mut updated = Vec::new();
 
         for item in params {
+            let _ = instance.set_param(item.id, item.value);
             if let Some(val) = instance.param_value(item.id) {
                 let display_text = instance.param_value_to_text(item.id, val);
                 updated.push(ParamValueItem { id: item.id, value: val, display_text });
+            } else {
+                let display_text = instance.param_value_to_text(item.id, item.value);
+                updated.push(ParamValueItem { id: item.id, value: item.value, display_text });
             }
         }
 
         Ok(updated)
+    }
+
+    fn convert_param_value(
+        &mut self,
+        id: u32,
+        value: Option<f64>,
+        text: Option<&str>,
+    ) -> Result<ConvertParamValueResponse, ToolError> {
+        let instance = self.instance.as_mut().ok_or_else(ToolError::no_plugin)?;
+        let mut out_val = value;
+        let mut out_text = None;
+
+        if let Some(t) = text {
+            if let Some(v) = instance.param_text_to_value(id, t) {
+                out_val = Some(v);
+                out_text = Some(t.to_string());
+            }
+        } else if let Some(v) = value {
+            out_text = instance.param_value_to_text(id, v);
+        }
+
+        Ok(ConvertParamValueResponse {
+            id,
+            value: out_val,
+            display_text: out_text,
+        })
     }
 
     fn play(&mut self, fugue: &nexus_host::fugue::CompositeFugue) -> Result<PlayResponse, ToolError> {

@@ -218,6 +218,10 @@ impl PluginInstance for Vst3PluginInstance {
         self.controller.as_ref().and_then(|c| crate::vst3::params::value_to_text(c, id, value))
     }
 
+    fn param_text_to_value(&mut self, id: u32, text: &str) -> Option<f64> {
+        self.controller.as_ref().and_then(|c| crate::vst3::params::text_to_value(c, id, text))
+    }
+
     fn latency(&mut self) -> u32 {
         unsafe { self.processor.getLatencySamples() }
     }

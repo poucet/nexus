@@ -48,6 +48,7 @@
   <h1>Nexus Tools</h1>
   <div class="quick">
     <button onclick="quick('get_session', {})">Session</button>
+    <button onclick="quick('list_params', {limit: 20})">Params</button>
     <button onclick="quick('decode_state', {depth: 4})">Decode live</button>
     <button onclick="quickSnapshot()">Snapshot</button>
     <button onclick="quickDiff()" title="diff last snapshot vs live — turn a knob in the plugin first">Diff vs last snap</button>
@@ -100,6 +101,7 @@ const EXAMPLES = {
   list_params: { query: "", limit: 20 },
   get_params: { ids: [0, 1] },
   set_params: { params: [{ id: 0, value: 0.5 }] },
+  convert_param_value: { id: 0, text: "-6.0 dB" },
   play: { fugue: { notes: [[0, "C3", 1.0, 100], [1.0, "G3", 1.0, 100]] } },
   render_audio: {
     tempo_bpm: 120,

@@ -108,6 +108,8 @@ impl ToolRegistry {
                 "Get current values and display strings for a list of parameter IDs."),
             tool!(service, "set_params", TimeoutClass::Default, SetParamsRequest => SetParamsResponse, set_params,
                 "Set values for one or more plugin parameters."),
+            tool!(service, "convert_param_value", TimeoutClass::Default, ConvertParamValueRequest => ConvertParamValueResponse, convert_param_value,
+                "Convert a parameter value to display text, or parse display text into a plain value."),
             tool!(service, "play", TimeoutClass::Default, PlayRequest => PlayResponse, play,
                 "Queue a musical performance (Droplets Fugue format: notes, CCs, automation ramps) for live transport-synced playback."),
             tool!(service, "render_audio", TimeoutClass::Load, RenderAudioRequest => RenderAudioResponse, render_audio,
@@ -208,6 +210,9 @@ mod tests {
         }
         async fn set_params(&self, _req: SetParamsRequest) -> Result<SetParamsResponse, ToolError> {
             Ok(SetParamsResponse { updated: vec![] })
+        }
+        async fn convert_param_value(&self, req: ConvertParamValueRequest) -> Result<ConvertParamValueResponse, ToolError> {
+            Ok(ConvertParamValueResponse { id: req.id, value: req.value, display_text: req.text })
         }
         async fn play(&self, _req: PlayRequest) -> Result<PlayResponse, ToolError> {
             Ok(PlayResponse { queued: true, duration_beats: 4.0, total_events: 0 })

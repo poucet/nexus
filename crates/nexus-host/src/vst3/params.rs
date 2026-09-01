@@ -66,3 +66,18 @@ fn string_from_utf16(buf: &[TChar]) -> String {
     let units: Vec<u16> = buf.iter().take_while(|&&c| c != 0).map(|&c| c as u16).collect();
     String::from_utf16_lossy(&units)
 }
+
+/// Parse display `text` into plain value for parameter `id`.
+pub fn text_to_value(controller: &ComPtr<IEditController>, id: u32, text: &str) -> Option<f64> {
+    let utf16: Vec<u16> = text.encode_utf16().collect();
+    let mut buf: String128 = [0; 128];
+    for (dst, src) in buf.iter_mut().zip(utf16.iter()) {
+        *dst = *src as TChar;
+    }
+    let mut norm: f64 = 0.0;
+    if unsafe { controller.getParamValueByString(id, buf.as_mut_ptr(), &mut norm) } == kResultOk {
+        Some(unsafe { controller.normalizedParamToPlain(id, norm) })
+    } else {
+        None
+    }
+}

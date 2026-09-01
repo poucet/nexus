@@ -69,6 +69,9 @@ impl NexusTools for Stub {
     async fn set_params(&self, _req: SetParamsRequest) -> Result<SetParamsResponse, ToolError> {
         Ok(SetParamsResponse { updated: vec![] })
     }
+    async fn convert_param_value(&self, req: ConvertParamValueRequest) -> Result<ConvertParamValueResponse, ToolError> {
+        Ok(ConvertParamValueResponse { id: req.id, value: req.value, display_text: req.text })
+    }
     async fn play(&self, _req: PlayRequest) -> Result<PlayResponse, ToolError> {
         Ok(PlayResponse { queued: true, duration_beats: 4.0, total_events: 0 })
     }

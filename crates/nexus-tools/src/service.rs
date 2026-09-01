@@ -340,6 +340,11 @@ impl NexusTools for ToolsService {
         Ok(SetParamsResponse { updated })
     }
 
+    async fn convert_param_value(&self, req: ConvertParamValueRequest) -> Result<ConvertParamValueResponse, ToolError> {
+        Self::check_instance(&req.instance)?;
+        self.bridge.convert_param_value(req.id, req.value, req.text).await
+    }
+
     async fn play(&self, req: PlayRequest) -> Result<PlayResponse, ToolError> {
         Self::check_instance(&req.instance)?;
         self.bridge.play(req.fugue).await
@@ -776,6 +781,20 @@ mod tests {
 
         let params = block_on(svc.list_params(ListParamsRequest::default())).unwrap();
         assert_eq!(params.total, 0);
+
+        let get_p = block_on(svc.get_params(GetParamsRequest { instance: "default".into(), ids: vec![0, 1] })).unwrap();
+        assert_eq!(get_p.params.len(), 0);
+
+        let set_p = block_on(svc.set_params(SetParamsRequest { instance: "default".into(), params: vec![SetParamItem { id: 0, value: 0.5 }] })).unwrap();
+        assert_eq!(set_p.updated.len(), 0);
+
+        let conv_p = block_on(svc.convert_param_value(ConvertParamValueRequest {
+            instance: "default".into(),
+            id: 0,
+            value: Some(0.5),
+            text: None,
+        })).unwrap();
+        assert_eq!(conv_p.id, 0);
 
         done(svc, handle);
     }

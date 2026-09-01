@@ -64,6 +64,19 @@ pub fn value_to_text(
     Some(String::from_utf8_lossy(written).into_owned())
 }
 
+/// Parse display text into plain value for parameter `id` via the plugin.
+pub fn text_to_value(
+    instance: &mut PluginInstance<NexusHost>,
+    id: u32,
+    text: &str,
+) -> Option<f64> {
+    let mut handle = instance.plugin_handle();
+    let params = handle.get_extension::<PluginParams>()?;
+    let id = ClapId::from_raw(id)?;
+    let c_str = std::ffi::CString::new(text).ok()?;
+    params.text_to_value(&mut handle, id, &c_str)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{Host, PluginCatalog, PluginFormat};

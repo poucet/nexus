@@ -61,7 +61,7 @@ Investigation starts here.
 | ✅ | T18 | `PARAM-HOST` | `PluginInstance::set_param` + `ParamChange` SPSC ring; `ParamInfo: Serialize`; per-instance `rtrb` ParamChange ring created at `activate()` | host.rs, PluginInstance trait |
 | ✅ | T19 | `PARAM-CLAP` | CLAP: ring drain → `ParamValueEvent`s; translate façade ParamValue/Mod/Gesture* from block.events | clap/process.rs, clap/instance.rs |
 | ✅ | T20 | `PARAM-VST3` | VST3: `vst3/param_changes.rs` (IParamValueQueue/IParameterChanges, prealloc) → `ProcessData.inputParameterChanges`; normalized values on ring; `setParamNormalized` GUI sync | vst3/param_changes.rs, vst3/process.rs, vst3/instance.rs |
-| ⬜ | T21 | `PARAM-TOOLS` | Params tools (list_params paged/filtered, get_params, set_params, convert_param_value) in trait + registry + debug page | trait + registry + debug page |
+| ✅ | T21 | `PARAM-TOOLS` | Params tools (list_params paged/filtered, get_params, set_params, convert_param_value) in trait + registry + debug page | trait + registry + debug page |
 
 #### Feature 6: Contract growth (as investigation demands) — ✅ Landed
 

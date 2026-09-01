@@ -174,6 +174,12 @@ pub trait PluginInstance {
         None
     }
 
+    /// Parse display text (e.g. "-6.0 dB", "440 Hz") into plain parameter value for `id`.
+    fn param_text_to_value(&mut self, id: u32, text: &str) -> Option<f64> {
+        let _ = (id, text);
+        None
+    }
+
     /// Enumerate presets / programs reported directly by the loaded plugin.
     fn presets(&mut self) -> Vec<PresetInfo> {
         Vec::new()
