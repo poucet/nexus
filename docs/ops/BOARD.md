@@ -9,91 +9,57 @@ Legend: 🚧 in flight · ✅ landed · ⏸ deferred.
 
 ## Milestones
 
-### 0.2 State tools: structured plugin state access
+### 0.4 AI Audio Perception, Patch Exploration & Reconstruction (Nexus -> Flux)
 
-Structured, transport-agnostic access to a loaded plugin's stored state (extensible per-plugin codecs, snapshot→tweak→diff investigation loop, REST debug UI first, MCP last). Rationale and design: @docs/design/STATE_TOOLS.md. See @docs/ops/ROADMAP.md.
+Audio analysis tool building for LLMs, autonomous patch space exploration, acoustic feature extraction, and Flux modular synthesis reconstruction. Rationale and design: @docs/design/AI_AUDIO_PERCEPTION_AND_EXPLORATION.md, @docs/design/AI_PATCH_RECONSTRUCTION_CUJ.md, @docs/design/AI_PATCH_RECONSTRUCTION_TECH.md.
 
-#### Feature 1: Tools core (`nexus-tools`) — ✅ Landed
+#### Feature 1: Audio Analysis & Feature Extraction Tools (`nexus-tools`) — ⬜ Queued
 
-The transport-agnostic trait, DTOs, registry, and main-thread bridge.
-
-| St | # | Label | Task | Files / notes |
-|---|---|---|---|---|
-| ✅ | T1 | `TOOLS-SCAFFOLD` | `crates/nexus-tools` scaffold: crate, workspace entry, `ToolError { code, message }`, deps (serde, serde_json, schemars, async-trait, crossbeam-channel, futures, base64, sha2, flate2, log, nexus-host) | `crates/nexus-tools/` — error.rs (`ErrorCode` + actionable messages). No tokio/axum. |
-| ✅ | T2 | `TOOLS-TRAIT` | `NexusTools` trait core (get_session, decode_state, edit_state, get/set_state, snapshot_state/restore/list, diff_state, list_codecs) + DTOs with JsonSchema; `instance:"default"` on every request | tools.rs + types.rs — 10 methods; requests reject instance ≠ "default". |
-| ✅ | T3 | `TOOLS-BRIDGE` | Main-thread bridge: `HostRequest` enum + futures oneshot replies + crossbeam channel + `drain(rx, &mut impl MainThreadHost)` + waker hook | bridge.rs — `MainThreadHost` is the small sync trait apps implement; timeouts are the frontend's job (`TimeoutClass` on each ToolDef). Service tests marshal through a real bridge + MockHost thread. |
-| ✅ | T4 | `TOOLS-REGISTRY` | Hand-written tool registry: `ToolDef { name, description, input/output schema, handler }` + dispatch; no macro in v1 | registry.rs — local `tool!` macro_rules builds entries; `descriptors()` feeds GET /tools. 4 tests. |
-| ✅ | T5 | `APP-WIRING` | `nexus-app` wiring: `tools_host.rs` implements `MainThreadHost` (state ops on the loaded `PluginInstance`), drain at top of `update()`, repaint waker | `crates/nexus-app/src/tools_host.rs`; app holds `Arc<ToolsService>` for the F3 REST server. Compile-verified. |
-
-#### Feature 2: State, snapshots & codecs — ✅ Landed
+Analysis tools providing acoustic perception for AI models (MFCCs, spectral centroid, rolloff, flatness, harmonic-to-noise ratio, ADSR transient envelope tracking, pitch detection).
 
 | St | # | Label | Task | Files / notes |
 |---|---|---|---|---|
-| ✅ | T6 | `STATE-BLOB` | get_state/set_state: sha256, size, base64 opt-in with `max_bytes` cap; set_state auto-snapshots prior state | service.rs — set_state re-saves after load (proves the plugin accepted it; reports normalized state). |
-| ✅ | T7 | `STATE-SNAPSHOT` | Snapshot store (in-memory, 32 / 256 MB LRU) + on-disk corpus export (`.../Nexus/state-corpus/<plugin_id>/<name>.state` + JSON sidecar) + list/restore | snapshots.rs — LRU tests; export is best-effort-tested via real use (writes under $HOME). restore rejects plugin-id mismatch (Conflict). |
-| ✅ | T8 | `CODEC-REGISTRY` | `StateCodec` trait + ordered registry + confidence selection + list_codecs | codec.rs — highest confidence wins; `CodecRegistry::standard()` is the one registration point. |
-| ✅ | T9 | `CODEC-GENERIC` | `generic` sniff codec (decode-only): gzip/zlib recurse, RIFF walk, VST3-preset framing, JSON/XML detection (whole + at-offset), binary leaves (entropy/strings/hexdump); depth + 32MB caps | codecs/generic.rs — 7 fixture tests (gzip-wrapped JSON, XML histogram, RIFF chunks, noise entropy, embedded JSON at offset, string extraction). |
-| ✅ | T10 | `CODEC-VITAL` | `vital-json` codec (decode+encode) | codecs/vital.rs — matches Vital-named plugins with JSON state (confidence 220); round-trip test. |
-| ✅ | T11 | `STATE-EDIT` | Shared edit application (JSON-pointer ops on the decoded doc) + `edit_state`: `base_sha256` guard, dry-run, auto-snapshot, through-the-plugin verify (load → re-save → re-decode → compare edited paths) | codec.rs (`apply_edits`, RFC 6901 incl. escapes + array append) + service.rs; float-tolerant verification. Full-flow test: dry-run → apply → verified → stale-hash Conflict → auto-snapshot restore. |
-| ✅ | T12 | `STATE-DIFF` | `diff_state(a, b=live)`: doc-level structural diff (byte info stays in the generic codec's binary leaves) | diff.rs — changed/added/removed with escaped pointer paths, big values summarized, 500-change cap. 5 tests. |
+| ⬜ | T28 | `AUDIO-ANALYSIS` | Feature extraction pipeline (MFCC, centroid, rolloff, flatness, HNR, envelope, pitch) returning structured acoustic descriptors | `crates/nexus-tools/src/analysis.rs`, `tools.rs`, `registry.rs` |
+| ⬜ | T29 | `AUDITION-DIFF` | Timbre difference scoring tool (`diff_audio` / `score_match`) comparing target sample against candidate reconstruction | `nexus-tools`, `simply-signal` |
 
-#### Feature 3: REST + debug UI (`nexus-rest`) — 🔶 In Progress
+#### Feature 2: Patch Exploration & Flux Reconstruction — ⬜ Queued
 
-Investigation starts here.
+Autonomous search and exploration in synthesis parameter space.
 
 | St | # | Label | Task | Files / notes |
 |---|---|---|---|---|
-| ✅ | T13 | `REST-SERVER` | `crates/nexus-rest`: server bootstrap on own thread + tokio runtime (droplets pattern: OnceLock, loopback-only, dual 127.0.0.1+[::1] bind), `GET /tools`, `POST /tools/{name}`; port 9996 / `NEXUS_REST_PORT` | lib.rs — per-tool timeouts from `TimeoutClass` (5s/30s); error codes → HTTP status. **End-to-end tested over real sockets** (tests/http.rs: tools listing, empty-body default, 409/404/400 mapping, debug page). Wired into `nexus-app` (status line shows the URL). |
-| ✅ | T14 | `REST-DEBUG-UI` | `/debug` page (one inlined HTML+JS file): tool list, raw JSON request editor (schema shown for reference), collapsible response tree, one-click snapshot / diff-against-live | debug.html — quick-action bar (Session / Decode live / Snapshot / Diff vs last snap), per-tool example bodies, captures `base_sha256` from decode responses into the edit_state example, ⌘⏎ sends. Visual check = T15. |
-| ⬜ | T15 | `INVESTIGATE` | Manual investigation pass: Vital, Serum 2, Arturia — snapshot → GUI knob → diff loop; export corpus; record per-plugin findings here | user-driven; findings feed F4/F6 |
+| ⬜ | T30 | `FLUX-BRIDGE` | Communication bridge between Nexus sampling host and Flux synthesizer engine | Socket/IPC bridge to Flux graph engine |
+| ⬜ | T31 | `PATCH-EXPLORATION` | Autonomous patch space explorer (MAP-Elites / evolutionary / Bayesian search loop) | Multi-objective loss balancing timbral and envelope fidelity |
 
-#### Feature 4: Codec expansion (driven by F3 findings) — ⬜ Queued
-
-| St | # | Label | Task | Files / notes |
-|---|---|---|---|---|
-| ⬜ | T16 | `CODEC-SERUM2` | `serum2` codec (decode-first) | from corpus |
-| ⬜ | T17 | `CODEC-ARTURIA` | `arturia` codec (decode-first) | from corpus |
-
-#### Feature 5: Param-set plumbing (`nexus-host`) — ✅ Landed
+#### Feature 3: Verification & External MCP Harness — ⬜ Queued
 
 | St | # | Label | Task | Files / notes |
 |---|---|---|---|---|
-| ✅ | T18 | `PARAM-HOST` | `PluginInstance::set_param` + `ParamChange` SPSC ring; `ParamInfo: Serialize`; per-instance `rtrb` ParamChange ring created at `activate()` | host.rs, PluginInstance trait |
-| ✅ | T19 | `PARAM-CLAP` | CLAP: ring drain → `ParamValueEvent`s; translate façade ParamValue/Mod/Gesture* from block.events | clap/process.rs, clap/instance.rs |
-| ✅ | T20 | `PARAM-VST3` | VST3: `vst3/param_changes.rs` (IParamValueQueue/IParameterChanges, prealloc) → `ProcessData.inputParameterChanges`; normalized values on ring; `setParamNormalized` GUI sync | vst3/param_changes.rs, vst3/process.rs, vst3/instance.rs |
-| ✅ | T21 | `PARAM-TOOLS` | Params tools (list_params paged/filtered, get_params, set_params, convert_param_value) in trait + registry + debug page | trait + registry + debug page |
-
-#### Feature 6: Contract growth (as investigation demands) — ✅ Landed
-
-| St | # | Label | Task | Files / notes |
-|---|---|---|---|---|
-| ✅ | T22 | `TOOLS-CATALOG` | Catalog/session tools: list_plugins, load_plugin | id → exact, else unique name match |
-| ✅ | T23 | `TOOLS-PRESET` | Preset tools: save/load/list_presets | over existing `Preset` |
-| ✅ | T24 | `RENDER-AUDIO` | Offline plugin sampling engine (`render_offline` + `hound` 32-bit float WAV encoder) | Driver-free offline rendering with Droplets fugue note/CC/param scheduling |
-| ✅ | T25 | `PLAY-FUGUE` | Live performance playback tool (`play`) in `nexus-tools` and `nexus-app` | Transport-synced playback using Droplets Fugue data model |
-
-#### Feature 7: MCP frontend — ✅ Landed
-
-| St | # | Label | Task | Files / notes |
-|---|---|---|---|---|
-| ✅ | T26 | `MCP-CORE` | `crates/nexus-mcp`: rmcp 0.9.1 streamable-HTTP and stdio server over `ToolRegistry` + standalone headless runner | Dual transport: stdio (`nexus-mcp --stdio`) and HTTP (`nexus-mcp --port 9997`) |
-| ⬜ | T27 | `MCP-SMOKE` | MCP E2E smoke with Claude/Cursor + docs | `claude mcp add --transport http` |
+| ⬜ | T27 | `MCP-SMOKE` | End-to-end MCP verification with Claude Desktop / Cursor / external agent harnesses | `claude mcp add --transport http` on port 9997 |
 
 ## Queued
 
 | St | Pri | Size | Label | What | Notes |
 |---|---|---|---|---|---|
-| ⬜ | P1 | S | `INVESTIGATE` | Manual investigation pass: Vital, Serum 2, Arturia (F3, T15) | snapshot → GUI knob → diff loop; export corpus; record findings (feeds F4/F6) |
-| ⬜ | P2 | S | `CODEC-SERUM2` | `serum2` codec (decode-first from corpus) (F4, T16) | Driven by F3 findings |
-| ⬜ | P2 | S | `CODEC-ARTURIA` | `arturia` codec (decode-first from corpus) (F4, T17) | Driven by F3 findings |
-| ⬜ | P2 | S | `MCP-SMOKE` | MCP E2E smoke + docs (F7, T27) | `claude mcp add --transport http`; README + design updates |
+| ⬜ | P1 | M | `AUDIO-ANALYSIS` | Audio feature extraction tools (MFCC, centroid, flatness, HNR, envelope, pitch) (F1, T28) | Gives AI sensory understanding of audio |
+| ⬜ | P1 | L | `PATCH-EXPLORATION` | Autonomous patch space exploration & search engine (F2, T31) | MAP-Elites / Bayesian parameter discovery |
+| ⬜ | P1 | M | `FLUX-BRIDGE` | Direct bridge to Flux modular synth engine (F2, T30) | Parameter mapping and graph mutation |
+| ⬜ | P2 | S | `AUDITION-DIFF` | Timbral and envelope similarity scoring tool (F1, T29) | A/B comparison and loss computation |
+| ⬜ | P2 | S | `MCP-SMOKE` | MCP E2E smoke verification + docs (F3, T27) | `claude mcp add --transport http`; README updates |
 
 ## Deferred by decision
+
+| St | Label | What | Reason / Decision |
+|---|---|---|---|
+| ⏸ | `INVESTIGATE` | Manual binary state reverse-engineering pass (Vital, Serum 2, Arturia) | Deferred in favor of audio sampling + Flux modular reconstruction workflow |
+| ⏸ | `CODEC-SERUM2` | `serum2` binary state codec | Deferred; focus is sample-and-reconstruct into Flux |
+| ⏸ | `CODEC-ARTURIA` | `arturia` binary state codec | Deferred; focus is sample-and-reconstruct into Flux |
 
 ## Landed index
 
 The full record lives in @docs/ops/CHANGELOG.md.
 
+- `T21` **Parameter Tools & Unit Conversion** (`PARAM-TOOLS` ✅ · 2026-09-01 · `xvzlvmrn` `16d25e93`) — Bidirectional parameter enumeration, reading, mutation, and plain $\leftrightarrow$ display-text conversion (`convert_param_value` via CLAP `PluginParams` and VST3 `IEditController`) exposed across `nexus-tools`, standalone MCP server, in-DAW wrapper, REST server, and debug web UI.
 - **v0.3.0 In-DAW Wrapper, Parameter Automation & Cross-Platform Linux** (✅ · 2026-09-01 · `v0.3.0`) — `nexus-wrap` CLAP plugin wrapper, in-DAW loopback MCP/REST server, realtime parameter automation ring (`rtrb` SPSC), Linux discovery paths/POSIX loader, Docker container setup, and AI patch reconstruction design specs.
 - **`nexus-wrap` Plugin Wrapper & In-DAW Loopback Bridge** (`NEXUS-WRAP` ✅ · 2026-09-01 · `koyzxqvo` `3982a4e6`) — `crates/nexus-wrap` CLAP plugin exporting `PluginAudioPorts`, `PluginNotePorts`, `PluginParams`, and `PluginState`. Inner plugin hosting bridge on top of `nexus-host` forwarding audio/MIDI buffers and reflecting parameter changes to DAWs. Background worker thread spinning up in-DAW loopback MCP (`rmcp` on 9997) and REST (`axum` on 9996) servers for live DAW AI automation. `WrapStateEnvelope` preserving inner plugin state blobs across DAW project saves.
 - **Linux Cross-Platform Support & Docker Setup** (`LINUX-DOCKER` ✅ · 2026-09-01 · `wnlyruwx` `daad4d12`) — Standard Linux plugin search paths for CLAP (`~/.clap`, `/usr/lib/clap`, `/usr/local/lib/clap`) and VST3 (`~/.vst3`, `/usr/lib/vst3`, `/usr/local/lib/vst3`). Clean target gating for macOS-specific AppKit window parenting, POSIX dynamic module loader for Linux VST3 bundles (`vst3/module/linux.rs`), multi-stage `Dockerfile` + `docker-compose.yml` for headless container testing and CI, and `docs/guides/LINUX.md`.
