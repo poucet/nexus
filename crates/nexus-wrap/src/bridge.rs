@@ -430,6 +430,7 @@ impl MainThreadHost for InnerPluginState {
             is_silent: result.is_silent,
             wav_base64,
             file_path,
+            ..Default::default()
         })
     }
 }

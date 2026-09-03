@@ -576,38 +576,9 @@ pub struct PlayResponse {
     pub total_events: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct RenderAudioRequest {
-    #[serde(default = "default_instance", skip_serializing_if = "is_default_instance")]
-    pub instance: String,
-    /// Musical fugue performance to render.
-    pub fugue: nexus_host::fugue::CompositeFugue,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tempo_bpm: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sample_rate: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub block_size: Option<usize>,
-    /// "wav_base64" (default) or "file".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_format: Option<String>,
-    /// Target file path when output_format is "file".
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_path: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct RenderAudioResponse {
-    pub sample_rate: u32,
-    pub channels: usize,
-    pub frames: usize,
-    pub duration_s: f64,
-    pub peak_db: f64,
-    pub rms_db: f64,
-    pub is_silent: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub wav_base64: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub file_path: Option<String>,
-}
+// `render_audio`'s request and response now live in `simply-fugue`, so nexus
+// and flux share the type rather than keeping two copies in step by hand. The
+// wire form is unchanged: the response's three added fields are all skipped
+// when unused, and nexus fills none of them.
+pub use nexus_host::fugue::{RenderAudioRequest, RenderAudioResponse};
 

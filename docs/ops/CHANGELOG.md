@@ -13,6 +13,40 @@
 
 ## Unreleased
 
+#### `simply-fugue` moved to the shared `music` repo (`FUGUENEXUS`) · 2026-09-03 22:25 · qpnkxvoo
+
+The fugue wire format is now shared with Flux, so it lives in a repo neither
+owns: `~/projects/simply/music`. Nexus consumes it as a path dependency and no
+longer vendors it.
+
+- **`crates/simply-fugue` deleted here**, and `Cargo.toml:19` now reads
+  `path = "../music/crates/simply-fugue"` — the only place that repo's name
+  appears. `nexus-host` and `nexus-mcp` keep `simply-fugue.workspace = true`,
+  and `nexus_host::fugue` (`nexus-host/src/lib.rs:18`) still re-exports it, so
+  no use site moved.
+- **`RenderAudioRequest` / `RenderAudioResponse` moved into the crate** and
+  `nexus-tools/src/types.rs` re-exports them, so nexus and flux share the type
+  instead of keeping two copies in step by hand. The response gained
+  `warnings`, `rms` and `peak_amplitude`; all three are skipped when unused and
+  **nexus fills none of them**, so its serialized response is byte-identical.
+  The three constructors (`nexus-app/src/tools_host.rs`,
+  `nexus-wrap/src/bridge.rs`, `nexus-mcp/src/standalone.rs`) take them with
+  `..Default::default()` and are otherwise unchanged.
+- **No behaviour change.** `render.rs` is untouched — the `Log` formula, the
+  discarded `Cc.interpolation`, the missing note tie-break and the missing
+  release tail are all still exactly as they were, pending a ruling.
+
+`cargo test --workspace`: 84 passed, 0 failed, 11 ignored — 87 before, less the
+three `simply-fugue` unit tests that went with the crate (the suite there is now
+24). `cargo clippy --workspace --all-targets`: 25 warnings, 27 before, less the
+two in `simply-fugue/src/note.rs` that left with it. Both examples still build.
+
+**Building nexus now requires `~/projects/simply/music` checked out beside it**,
+and a lane workspace needs the gitignored symlink
+`ln -sfn ~/projects/simply/music .workspaces/music` — see `music/AGENTS.md`.
+The `Dockerfile`'s build context does not yet reach the sibling; `docker build`
+is expected to fail until it is re-rooted.
+
 ---
 
 ## v0.3.0 — In-DAW Wrapper, Parameter Automation & Cross-Platform Linux

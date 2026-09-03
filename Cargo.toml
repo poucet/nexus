@@ -16,7 +16,13 @@ nexus-host = { path = "crates/nexus-host" }
 nexus-tools = { path = "crates/nexus-tools" }
 nexus-rest = { path = "crates/nexus-rest" }
 nexus-mcp = { path = "crates/nexus-mcp" }
-simply-fugue = { path = "crates/simply-fugue" }
+# Shared with flux, and owned by neither: ~/projects/simply/music. This is the
+# only place that repo's name appears. The path must stay lexically OUTSIDE this
+# workspace root — a symlink under it would make cargo treat simply-fugue as an
+# automatic member and try to inherit our [workspace.package]. Lane workspaces
+# resolve `../music` through `.workspaces/music`, a gitignored symlink each
+# checkout recreates; see music/AGENTS.md.
+simply-fugue = { path = "../music/crates/simply-fugue" }
 
 # Shared third-party dependencies are pinned here so every crate in the
 # workspace resolves to the same version.
