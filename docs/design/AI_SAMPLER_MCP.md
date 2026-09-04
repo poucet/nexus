@@ -40,42 +40,43 @@ Main-Thread Bridge / Headless Host Engine
 
 ### 1. `play` & `render_audio` (Fugue-Powered Playback & Sampling)
 
-Leverages the **Droplets Fugue definition** (`../droplets/src/fugue/types.rs`) for musical performance and parameter gestures:
+Both take a **`CompositeFugue`** from the shared `simply-fugue` crate (`poucet/music-rs`, `crates/simply-fugue/src/composite.rs`) — the same JSON flux's `render_audio` takes, under the same tool name. (Droplets keeps its own fugue model and is not a consumer; the crate docs say why.)
 
 - **Note Shorthand**: Array form `[beat, "C3", duration, velocity, channel]` or object form `{beat, note, duration, velocity, channel}`. Supports note names (`"C3"`, `"F#4"`, `"Bb2"`) or MIDI numbers `0..127`.
-- **CC & Parameter Automation**: Points `[[beat, value], [beat, value, curve]]` with interpolation curves (`linear`, `exp`, `log`, `none`).
-- **Per-Note Expression**: Pitch bend and pressure/aftertouch lanes.
-- **Composite Fugue**: Bundles notes, CCs, parameter ramps, and expression into one atomic performance.
+- **CC & Parameter Automation**: `ccs` / `params` points `[[beat, value], [beat, value, curve]]` with curves `none` (stepped, **the default**), `linear`, `exp` (`t²`), `log` (`1 − (1 − t)²`). A point's curve shapes the segment that *starts* at it.
+- **Per-Note Expression**: `pitch_bends` / `pressures` lanes of `[beat, value, curve?]` aimed at one `(channel, note)` — semitones and `0..1` respectively; a point without a curve takes the lane's `interpolation`.
+- **Raw events**: `raw_events` carries any of the ten `FugueEvent` kinds at a `beat_offset`.
+- **Length and looping** are fields *of the fugue*: `duration_beats` (auto-sized from the content if omitted, floored at 1 beat) and `loop_mode` (`"once"` default, `{"times": n}`, `"loop"`, `"ping_pong"`).
 
 #### `play` (Live Transport-Synced Playback)
 Dispatches the fugue to the live `nexus-app` audio engine for real-time auditioning.
-- **Request**:
-  - `instance`: `String` (default `"default"`)
-  - `fugue`: `FugueDefinition` or `CompositeFugue`
-  - `quantize`: `Option<QuantizeMode>` (`"immediate"`, `"beat"`, `"bar"`, `"bars:N"`)
-  - `loop_mode`: `Option<LoopMode>` (`"once"`, `"forever"`, `{"times": N}`)
+- **Request** (`PlayRequest`): `instance: String` (default `"default"`), `fugue: CompositeFugue`. There is no `quantize` or `loop_mode` argument on the request — looping is the fugue's own field.
+- **Response** (`PlayResponse`): `queued`, `duration_beats`, `total_events`.
 
 #### `render_audio` (Offline Sampler)
-Renders audio offline at maximum computational speed through the loaded plugin (or clone) without an audio driver.
-- **Request**:
-  - `instance`: `String` (default `"default"`)
-  - `tempo_bpm`: `Option<f64>` (default 120.0)
-  - `duration_beats`: `Option<f64>` or `seconds: Option<f64>` (0.05..60.0s, auto-sized if omitted)
-  - `sample_rate`: `Option<u32>` (default 48000)
-  - `block_size`: `Option<usize>` (default 512)
-  - `fugue`: `Option<FugueDefinition>` (or simple `notes` list)
-  - `output_format`: `Option<AudioFormat>` (`"wav_base64"` | `"file"`, default `"wav_base64"`)
-  - `output_path`: `Option<String>` (optional file target)
+Renders audio offline at maximum computational speed through the loaded plugin — a headless clone of it in `nexus-app` / `nexus-wrap`, the held instance in `nexus-mcp` — without an audio driver. The request and response are `simply_fugue::{RenderAudioRequest, RenderAudioResponse}`, shared with flux verbatim.
 
-- **Response**:
-  - `duration_s`: `f64`
-  - `sample_rate`: `u32`
-  - `channels`: `usize`
-  - `peak_db`: `f64`
-  - `rms_db`: `f64`
-  - `is_silent`: `bool`
-  - `wav_base64`: `Option<String>`
-  - `file_path`: `Option<String>`
+- **Request** (`RenderAudioRequest`):
+  - `instance`: `String` (default `"default"`)
+  - `fugue`: `CompositeFugue` (required)
+  - `tempo_bpm`: `Option<f64>` (default 120.0; an absent tempo is reported in `warnings`)
+  - `sample_rate`: `Option<u32>` (default 48000)
+  - `block_size`: `Option<usize>` (default 512; floored at 64, reported in `warnings`)
+  - `output_format`: `Option<OutputFormat>` — the enum `"file"` | `"wav_base64"`, **default `"file"`**; any other spelling is refused (`invalid_input`) naming both
+  - `output_path`: `Option<String>` (file target when `output_format` is `"file"`; otherwise `<presets dir>/rendered/sample_<unix-time>.wav`)
+
+  There is no `duration_beats` / `seconds` argument: the length is the fugue's `duration_beats` at `tempo_bpm`, times the pass count, **plus a fixed 1.0 s release tail** so a note ending on the last beat keeps its decay. `loop_mode` `once` renders one pass and `{"times": n}` renders `n` passes (`0` counts as one, as on flux) with every event re-emitted `k · duration_beats` later and the tail added once after the last; `loop` / `ping_pong` are endless and are refused offline — they apply to `play`.
+
+- **Response** (`RenderAudioResponse`):
+  - `sample_rate: u32`, `channels: usize`, `frames: usize`, `duration_s: f64` — `frames` and `duration_s` **include the tail**
+  - `peak_db: f64`, `rms_db: f64`, `is_silent: bool` (peak below −96 dBFS)
+  - `wav_base64: Option<String>` | `file_path: Option<String>` — exactly one, per `output_format`
+  - `warnings: Vec<String>` — everything decided on the caller's behalf: an assumed tempo, a floored block size, the tail, `times: 0`, and any event kind this plugin path cannot carry, with its count (VST3 takes note on/off only; CLAP takes raw MIDI and per-note expression)
+  - `rms`, `peak_amplitude`: `Option<f32>` — linear twins of the dB pair, not filled by nexus today
+
+- **Rendering rules**, the same numbers as flux so one fugue measures the same on both hosts: CC bytes `0–127` go to the plugin untouched — they *are* the normalized (travel) space its own knob moves in, so a CC sweep behaves like turning that knob; a CC or per-note lane with a curve is a ramp sampled every 64 frames (values rounded to a byte, held values not re-sent) and a curve-less lane stays one instantaneous byte per point; `params` lanes interpolate in the plugin's plain value on the same grid; a note-off precedes a note-on at the same sample.
+
+- **Asymmetries with flux**: flux renders through one patch and nexus through a hosted plugin, so identical calls give comparable, not equal, audio; flux refuses a musical length past 60 s where nexus has no ceiling; flux reports errors as prose, nexus as `{code, message}`.
 
 ### 2. `list_plugins` & `load_plugin`
 

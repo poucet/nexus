@@ -13,6 +13,24 @@
 
 ## Unreleased
 
+#### `render_audio` renders what the fugue says (`FUGUENEXUS-2`) · 2026-09-04 23:19 · vwwnyskw, wzsyxqru, wvyzxrsm, tswpsmmv
+
+The behaviour half of FUGUE-API.md §6's ruling (the design lives in flux, `docs/design/FUGUE-API.md` §6.1, §6.2, §6.6, §6.7), on nexus's side. **Every item below changes what already-valid fugue JSON sounds like** — that is the ruling — and every policy is the same number as flux's `FUGUEONE`, so one fugue measures the same on both hosts. Evidence: @docs/research/render-audio-fixture-table.md, the 12 shared fixtures rendered before and after.
+
+- **`Log` is `1 − (1 − t)²`**, the formula flux and droplets use; nexus computed `√t` and was the outlier. One `curve_factor` serves every interpolating site (flux `I-49`).
+- **`Cc.interpolation` is honoured**: a CC lane with a curve is a ramp of bytes on the 64-frame grid `params` lanes use, rounded, held values not re-sent; a curve-less lane is still exactly one byte per point, so no existing fugue gains an event (flux `I-50`).
+- **The five kinds `_ => {}` swallowed are rendered**: channel pitch bend, pressure and poly pressure as raw MIDI; per-note pitch bend and pressure as CLAP note expressions (`Tuning` in semitones, `Pressure` 0..1), interpolated on the same grid. The match is exhaustive now. `Event::NoteExpression` reached nothing before — the clack conversion had no arm for it and has one (flux `I-48`).
+- **A fixed 1.0 s release tail**, once, after the last pass; `frames` and `duration_s` include it (flux `I-51`).
+- **`loop_mode` offline**: `once` is one pass, `{"times": n}` is `n` passes (`0` counts as one, as on flux) with every event re-emitted a pass later; `loop` / `ping_pong` are refused with `invalid_input` naming live playback (flux `I-52`).
+- **Note-off before note-on at the same sample**, in nexus's own sort, whatever order `compile()` delivered (flux `I-54`).
+- **`output_format` is the shared `OutputFormat` enum and defaults to `file`** (`simply-fugue` moved to `bd774ec2`; nothing else in the lock moved); an unknown spelling is refused naming both values instead of falling through to base64. The REST debug UI asks for `wav_base64` by name, so it is unaffected.
+- **`warnings` is filled**: an assumed tempo, a floored `block_size`, the tail, `times: 0`, and any event kind the plugin path cannot carry, with its count — VST3 takes note on/off only and says so through the new `PluginInstance::event_support`.
+- **Fixed in passing**: a block's event buffer was not in time order — every note went in ahead of every parameter change whatever their frames said, and CLAP specifies that list as time-ordered. One sort.
+- **One restructuring**: the three copy-pasted `render_audio` host impls share `nexus_tools::render` (options, file/base64, response, error mapping); each keeps only how it obtains an instance. The tool description states the policies that have no field — the tail, the loop semantics, the `file` default, the curve set, and §6.7's ruling that CC bytes 0–127 *are* the travel space.
+- `docs/design/AI_SAMPLER_MCP.md` §1 corrected to the real request and response (flux `I-47`).
+
+Gates: `cargo test --workspace` 101 passed / 0 failed / 11 ignored (was 84 / 0 / 11); `cargo clippy --workspace --all-targets` 24 warnings against the 25 baseline, none new.
+
 #### `simply-fugue` consumed via git dependency (`poucet/music-rs`) · 2026-09-04 18:09 · ulrvzslx
 
 Switched `simply-fugue` from a local path dependency to `https://github.com/poucet/music-rs.git`.
