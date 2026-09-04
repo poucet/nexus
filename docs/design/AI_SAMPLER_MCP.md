@@ -15,6 +15,8 @@ We want AI agents (e.g. LLMs running via MCP) to interact with arbitrary CLAP an
 
 This provides the sensory feedback loop enabling an AI agent to listen to a plugin preset/sound and analyze or sample it.
 
+> **Downstream Sensory Perception & Reconstruction:** For downstream acoustic feature analysis, spectral diffing, and modular synthesis reconstruction driven by Sense and Flux, see `../../sense/docs/design/AI_AUDIO_PERCEPTION_AND_EXPLORATION.md`, `../../sense/docs/design/AI_PATCH_RECONSTRUCTION_CUJ.md`, and `../../sense/docs/design/AI_PATCH_RECONSTRUCTION_TECH.md`.
+
 ## Architecture
 
 ```

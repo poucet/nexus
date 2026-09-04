@@ -9,9 +9,9 @@ Legend: 🚧 in flight · ✅ landed · ⏸ deferred.
 
 ## Milestones
 
-### 0.4 -  AI Patch Reconstruction & State Exploration
+### 0.4 - AI Sampler Harness & State Exploration
 
-Audio analysis tool building for LLMs, autonomous patch space exploration, acoustic feature extraction, and Flux modular synthesis reconstruction. Rationale and design: @docs/design/AI_AUDIO_PERCEPTION_AND_EXPLORATION.md, @docs/design/AI_PATCH_RECONSTRUCTION_CUJ.md, @docs/design/AI_PATCH_RECONSTRUCTION_TECH.md.
+Headless VST3/CLAP plugin sampling, offline rendering harness (`nexus-mcp`), state codecs, and DAW wrapper extensions. (Downstream audio analysis & patch reconstruction live in `../sense` and `../flux`.)
 
 #### Feature 3: Verification & External MCP Harness — ⬜ Queued
 
