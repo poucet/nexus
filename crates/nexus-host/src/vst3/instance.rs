@@ -17,7 +17,7 @@ use vst3_sdk::Steinberg::Vst::{
 use vst3_sdk::Steinberg::{FUnknown, IBStream, IPluginBaseTrait, TUID, kResultOk};
 use vst3_sdk::{ComPtr, ComWrapper};
 
-use crate::host::{AudioConfig, AudioProcessor, HostError, PluginInstance};
+use crate::host::{AudioConfig, AudioProcessor, EventSupport, HostError, PluginInstance};
 #[cfg(target_os = "macos")]
 use crate::vst3::editor::Vst3Editor;
 use crate::vst3::host_app::Vst3HostApp;
@@ -100,6 +100,16 @@ impl Vst3PluginInstance {
 }
 
 impl PluginInstance for Vst3PluginInstance {
+    /// **Neither, and that is deliberate rather than forgotten.** `to_vst_event`
+    /// (`vst3/process.rs`) converts note on/off and drops every other raw-MIDI
+    /// status — CC, pitch bend, channel and poly pressure — and builds no
+    /// `kNoteExpressionValueEvent`, though the VST3 bindings have one. Saying so
+    /// here is what turns a silent drop in the offline renderer into a warning
+    /// the caller can read.
+    fn event_support(&self) -> EventSupport {
+        EventSupport { raw_midi: false, note_expression: false }
+    }
+
     fn activate(&mut self, config: AudioConfig) -> Result<Box<dyn AudioProcessor>, HostError> {
         let component = &self.component;
         let processor = &self.processor;

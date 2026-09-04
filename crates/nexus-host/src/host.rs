@@ -35,6 +35,33 @@ pub enum HostError {
     /// A preset could not be read, written, or parsed.
     #[error("preset error: {0}")]
     Preset(String),
+
+    /// The request cannot be honoured as asked, and the caller is the one who
+    /// can fix it — an endless `loop_mode` handed to an offline render, say.
+    /// Distinct from [`HostError::Load`] so a tool surface can answer
+    /// `invalid_input` instead of blaming the plugin.
+    #[error("{0}")]
+    InvalidRequest(String),
+}
+
+/// What a plugin instance can actually deliver to its plugin, beyond notes.
+///
+/// The offline renderer asks so that it can **say** when part of a fugue will
+/// not be heard, rather than dropping it in silence — the failure mode
+/// FUGUE-API.md §1.2 exists to remove. Defaulting to "notes only" is the
+/// conservative answer: a backend that can do more says so, and a backend
+/// nobody has taught to answer under-promises instead of lying.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EventSupport {
+    /// Raw MIDI beyond note on/off — control change, pitch bend, channel
+    /// pressure, poly pressure. The CLAP backend forwards every
+    /// [`crate::process::Event::Midi`] straight through; the VST3 backend
+    /// converts note on/off only and drops the rest (`vst3/process.rs`).
+    pub raw_midi: bool,
+    /// Per-note expression ([`crate::process::Event::NoteExpression`]).
+    /// CLAP carries it natively; VST3 has a note-expression event type that
+    /// nexus does not build yet.
+    pub note_expression: bool,
 }
 
 /// Static metadata about a plugin, read from its factory *without*
@@ -128,6 +155,14 @@ pub trait PluginInstance {
 
     /// Deactivate, after the processor has been stopped and dropped. Idempotent.
     fn deactivate(&mut self);
+
+    /// What this instance can deliver beyond note on/off — see [`EventSupport`].
+    ///
+    /// Conservative by default, so a backend nobody has taught to answer makes
+    /// the renderer warn rather than promise.
+    fn event_support(&self) -> EventSupport {
+        EventSupport::default()
+    }
 
     /// Get a mutable reference to the parameter change ring producer, if activated.
     fn param_producer(&mut self) -> Option<&mut rtrb::Producer<ParamChange>> {

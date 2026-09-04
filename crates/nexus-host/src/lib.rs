@@ -27,8 +27,8 @@ pub mod ui;
 pub use discovery::catalog::{CatalogFailure, PluginCatalog, PluginRef};
 pub use fugue::{CompositeFugue, FugueDefinition, FugueEvent, TimedFugueEvent};
 pub use host::{
-    AudioConfig, AudioProcessor, Host, HostError, ParamChange, ParamInfo, PluginDescriptor,
-    PluginFormat, PluginInstance, VoiceInfo,
+    AudioConfig, AudioProcessor, EventSupport, Host, HostError, ParamChange, ParamInfo,
+    PluginDescriptor, PluginFormat, PluginInstance, VoiceInfo,
 };
 pub use preset::Preset;
 pub use render::{render_offline, RenderOptions, RenderResult};

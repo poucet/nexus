@@ -19,7 +19,9 @@ use crate::clap::host::{
 };
 use crate::clap::ports::IoLayout;
 use crate::clap::process::ClapAudioProcessor;
-use crate::host::{AudioConfig, AudioProcessor, HostError, PluginInstance as HostPluginInstance};
+use crate::host::{
+    AudioConfig, AudioProcessor, EventSupport, HostError, PluginInstance as HostPluginInstance,
+};
 
 /// A loaded CLAP plugin (main-thread side).
 pub struct ClapPluginInstance {
@@ -70,6 +72,13 @@ impl ClapPluginInstance {
 }
 
 impl HostPluginInstance for ClapPluginInstance {
+    /// CLAP carries both: every `Event::Midi` is forwarded verbatim as a clack
+    /// `MidiEvent`, and `Event::NoteExpression` becomes a `NoteExpressionEvent`
+    /// (`clap/process.rs`).
+    fn event_support(&self) -> EventSupport {
+        EventSupport { raw_midi: true, note_expression: true }
+    }
+
     fn activate(&mut self, config: AudioConfig) -> Result<Box<dyn AudioProcessor>, HostError> {
         let io = {
             let mut handle = self.instance.plugin_handle();

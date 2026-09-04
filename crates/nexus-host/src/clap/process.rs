@@ -7,8 +7,8 @@
 
 use clack_host::events::Match;
 use clack_host::events::event_types::{
-    MidiEvent, NoteChokeEvent, NoteOffEvent, NoteOnEvent, ParamGestureBeginEvent,
-    ParamGestureEndEvent, ParamModEvent, ParamValueEvent,
+    MidiEvent, NoteChokeEvent, NoteExpressionEvent, NoteExpressionType, NoteOffEvent, NoteOnEvent,
+    ParamGestureBeginEvent, ParamGestureEndEvent, ParamModEvent, ParamValueEvent,
 };
 use clack_host::prelude::*;
 use clack_host::utils::Cookie;
@@ -16,7 +16,24 @@ use clack_host::utils::Cookie;
 use crate::clap::host::NexusHost;
 use crate::clap::ports::IoLayout;
 use crate::host::{AudioProcessor, HostError, ParamChange};
-use crate::process::{Event, NoteEventKind, ProcessBlock};
+use crate::process::{Event, NoteEventKind, NoteExpression, ProcessBlock};
+
+/// The façade's expression dimensions map one-to-one onto CLAP's, which is what
+/// [`crate::process::Event`] was modelled on. Units are CLAP's and are the
+/// caller's contract: `Tuning` is **relative semitones, -120..=120**, and
+/// `Volume` aside (`0 < x <= 4`, plain = `20·log x`) every other dimension is
+/// `0..=1` — `Pan` with 0.5 as centre.
+fn expression_type(expression: NoteExpression) -> NoteExpressionType {
+    match expression {
+        NoteExpression::Volume => NoteExpressionType::Volume,
+        NoteExpression::Pan => NoteExpressionType::Pan,
+        NoteExpression::Tuning => NoteExpressionType::Tuning,
+        NoteExpression::Vibrato => NoteExpressionType::Vibrato,
+        NoteExpression::Expression => NoteExpressionType::Expression,
+        NoteExpression::Brightness => NoteExpressionType::Brightness,
+        NoteExpression::Pressure => NoteExpressionType::Pressure,
+    }
+}
 
 /// A CLAP plugin's audio-thread half. `Send`, so the engine can move it onto
 /// the realtime callback.
@@ -148,6 +165,24 @@ impl AudioProcessor for ClapAudioProcessor {
                         NoteEventKind::Choke => events.push(&NoteChokeEvent::new(ev.time, pckn)),
                         NoteEventKind::End => {} // output-direction only
                     }
+                }
+                Event::NoteExpression { expression, note_id, channel, key, value, .. } => {
+                    // Addressed on the plugin's note port, exactly like the note
+                    // it modifies — an expression that names a different port
+                    // matches no voice. The façade's own `port_index` is a host
+                    // hint and the `Event::Note` arm above ignores it too.
+                    let pckn = Pckn::new(
+                        note_port,
+                        *channel as u16,
+                        *key as u16,
+                        note_id_match(*note_id),
+                    );
+                    events.push(&NoteExpressionEvent::new(
+                        ev.time,
+                        pckn,
+                        expression_type(*expression),
+                        *value,
+                    ));
                 }
                 Event::Midi { port_index, data } => {
                     events.push(&MidiEvent::new(ev.time, *port_index, *data))

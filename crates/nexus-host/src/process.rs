@@ -100,7 +100,10 @@ pub enum NoteEventKind {
 }
 
 /// Per-note expression dimension (mirrors CLAP's note expressions).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Ordered and hashable so a renderer can key one lane per
+/// `(dimension, channel, note)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NoteExpression {
     Volume,
     Pan,
