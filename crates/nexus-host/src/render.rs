@@ -264,9 +264,14 @@ pub fn render_offline(
     let passes: u32 = match opts.fugue.loop_mode {
         LoopMode::Once => 1,
         LoopMode::Times(0) => {
-            return Err(HostError::InvalidRequest(
-                "loop_mode {\"times\": 0} renders nothing; use at least 1 pass".into(),
-            ));
+            // Flux renders `{"times": 0}` as one pass (`n.max(1)`), and the two
+            // hosts must not answer the same JSON with different lengths. A
+            // decision made for the caller, so it is said out loud.
+            warnings.push(
+                "loop_mode {\"times\": 0} has no pass to render; rendered one pass, as flux does"
+                    .into(),
+            );
+            1
         }
         LoopMode::Times(n) => n,
         LoopMode::Loop | LoopMode::PingPong => {
@@ -1222,6 +1227,29 @@ mod tests {
             .map(|(frame, _)| *frame)
             .collect();
         assert_eq!(ons, vec![0, 24000, 48000], "one note-on per pass, a beat apart");
+    }
+
+    /// `{"times": 0}` is one pass, as it is on flux, and the caller is told.
+    #[test]
+    fn times_zero_renders_one_pass_and_says_so() {
+        let fugue = CompositeFugue {
+            notes: vec![serde_json::from_str(r#"[0,"C3",0.5,100]"#).unwrap()],
+            duration_beats: Some(1.0),
+            loop_mode: LoopMode::Times(0),
+            ..Default::default()
+        };
+        let (events, result) = recorded(fugue, everything());
+        let ons = events
+            .iter()
+            .filter(|(_, e)| matches!(e, Event::Note { kind: NoteEventKind::On, .. }))
+            .count();
+        assert_eq!(ons, 1, "one pass, not none");
+        assert_eq!(result.frames, 24000 + (RELEASE_TAIL_S * 48000.0) as usize);
+        assert!(
+            result.warnings.iter().any(|w| w.contains("\"times\": 0") && w.contains("one pass")),
+            "{:?}",
+            result.warnings
+        );
     }
 
     /// An endless `loop_mode` has no length, so it is refused rather than
