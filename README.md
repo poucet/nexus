@@ -26,7 +26,7 @@ This is a Cargo workspace. Each crate is a layer on top of the one before it:
 | Crate | Kind | Purpose |
 | --- | --- | --- |
 | [`nexus-host`](crates/nexus-host) | library | The engine that discovers, loads, and runs VST3/CLAP plugins. Fast offline rendering without audio drivers. |
-| [`simply-fugue`](crates/simply-fugue) | library | Shared Fugue musical definition, compact note shorthand, and pitch parsing (`C3` = 60). |
+| [`simply-fugue`](https://github.com/poucet/music-rs) | library (external) | Shared Fugue musical definition, compact note shorthand, and pitch parsing (`C3` = 60). |
 | [`nexus-tools`](crates/nexus-tools) | library | Transport-agnostic tool traits, registry, state codecs, snapshot store, and main-thread bridge. |
 | [`nexus-mcp`](crates/nexus-mcp) | binary (`nexus-mcp`) | Standalone MCP server exposing all tools to AI coding agents via stdio or streamable HTTP. |
 | [`nexus-rest`](crates/nexus-rest) | library | In-process REST API server and browser-based debug UI (`http://127.0.0.1:9996/debug`). |
@@ -39,7 +39,6 @@ nexus/
 ├── .cargo/config.toml    # cargo aliases for the bundler (cargo bundle, …)
 ├── xtask/                # build helper: compiles + bundles the plugin
 └── crates/
-    ├── simply-fugue/     # canonical fugue musical performance schema
     ├── nexus-host/       # hosting & offline rendering engine (the foundation)
     ├── nexus-tools/      # tool definitions, state codecs & snapshots
     ├── nexus-mcp/        # standalone MCP server for AI agents (stdio / HTTP)

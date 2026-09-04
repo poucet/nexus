@@ -13,6 +13,15 @@
 
 ## Unreleased
 
+#### `simply-fugue` consumed via git dependency (`poucet/music-rs`) · 2026-09-04 18:09 · ulrvzslx
+
+Switched `simply-fugue` from a local path dependency to `https://github.com/poucet/music-rs.git`.
+
+- `Cargo.toml` now references `{ git = "https://github.com/poucet/music-rs.git" }`.
+- External clones no longer require `music` checked out as a sibling at `../music`.
+- Container builds (`Dockerfile`) build cleanly from the repo root without sibling context mounting.
+- Local cross-repo development can be overridden using Cargo's `[patch]` in `.cargo/config.toml`.
+
 #### `simply-fugue` moved to the shared `music` repo (`FUGUENEXUS`) · 2026-09-03 22:25 · qpnkxvoo
 
 The fugue wire format is now shared with Flux, so it lives in a repo neither
