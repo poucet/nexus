@@ -1,11 +1,9 @@
 use std::fs;
-use std::path::PathBuf;
 
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as BASE64;
 use nexus_host::host::PluginDescriptor;
-use nexus_host::render::{render_offline, RenderOptions};
+use nexus_host::render::render_offline;
 use nexus_host::{PluginFormat, Preset};
+use nexus_tools::render::{render_error, render_options, render_response};
 use nexus_tools::bridge::{HostSession, MainThreadHost};
 use nexus_tools::service::sha256_hex;
 use nexus_tools::types::*;
@@ -308,57 +306,17 @@ impl MainThreadHost for NexusApp {
         let plugin_ref = self.loaded.as_ref().ok_or_else(ToolError::no_plugin)?;
         let live_instance = self.instance.as_mut().ok_or_else(ToolError::no_plugin)?;
 
-        // 1. Capture live state to clone instance faithfully without touching live audio callback
+        // Capture live state so the render runs on a faithful clone and never
+        // touches the live audio callback. This — and only this — is what
+        // differs between the hosts; everything either side of `render_offline`
+        // is `nexus_tools::render`.
         let state = live_instance.save_state().map_err(|e| ToolError::plugin(format!("save_state: {e}")))?;
-
-        // 2. Instantiate headless clone
         let mut clone = self.host.load(plugin_ref).map_err(|e| ToolError::plugin(format!("clone plugin instance: {e}")))?;
         let _ = clone.load_state(&state);
 
-        // 3. Render offline
-        let compiled_fugue = req.fugue.compile();
-        let opts = RenderOptions {
-            sample_rate: req.sample_rate.unwrap_or(48000) as f64,
-            block_size: req.block_size.unwrap_or(512),
-            tempo_bpm: req.tempo_bpm.unwrap_or(120.0),
-            fugue: compiled_fugue,
-        };
-
-        let result = render_offline(&mut *clone, &opts).map_err(|e| ToolError::plugin(format!("render_offline: {e}")))?;
-
-        let format = req.output_format.as_deref().unwrap_or("wav_base64");
-        let (wav_base64, file_path) = match format {
-            "file" => {
-                let out_path = if let Some(custom) = &req.output_path {
-                    PathBuf::from(custom)
-                } else {
-                    let dir = nexus_host::discovery::config::preset_directory().join("rendered");
-                    let _ = fs::create_dir_all(&dir);
-                    dir.join(format!("sample_{}.wav", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()))
-                };
-                if let Err(e) = fs::write(&out_path, &result.wav_bytes) {
-                    return Err(ToolError::internal(format!("write rendered wav: {e}")));
-                }
-                (None, Some(out_path.display().to_string()))
-            }
-            _ => {
-                let b64 = BASE64.encode(&result.wav_bytes);
-                (Some(b64), None)
-            }
-        };
-
-        Ok(RenderAudioResponse {
-            sample_rate: result.sample_rate,
-            channels: result.channels.len(),
-            frames: result.frames,
-            duration_s: result.duration_s,
-            peak_db: result.peak_db,
-            rms_db: result.rms_db,
-            is_silent: result.is_silent,
-            wav_base64,
-            file_path,
-            ..Default::default()
-        })
+        let opts = render_options(req);
+        let result = render_offline(&mut *clone, &opts).map_err(render_error)?;
+        render_response(req, result)
     }
 }
 

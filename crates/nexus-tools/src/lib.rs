@@ -18,6 +18,7 @@ pub mod codecs;
 pub mod diff;
 pub mod error;
 pub mod registry;
+pub mod render;
 pub mod service;
 pub mod snapshots;
 pub mod tools;

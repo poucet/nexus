@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         sample_rate: Some(48000),
         tempo_bpm: Some(120.0),
         block_size: Some(512),
-        output_format: Some("file".into()),
+        output_format: Some(OutputFormat::File),
         output_path: Some(out_file.display().to_string()),
     };
 

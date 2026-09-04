@@ -113,7 +113,24 @@ impl ToolRegistry {
             tool!(service, "play", TimeoutClass::Default, PlayRequest => PlayResponse, play,
                 "Queue a musical performance (Droplets Fugue format: notes, CCs, automation ramps) for live transport-synced playback."),
             tool!(service, "render_audio", TimeoutClass::Load, RenderAudioRequest => RenderAudioResponse, render_audio,
-                "Render audio offline through the loaded plugin at max CPU speed without an audio driver. Returns audio metrics and 32-bit float WAV data (base64 or file)."),
+                "Render a fugue offline through the loaded plugin at max CPU speed, without an audio driver. \
+                 Returns audio metrics and 32-bit float WAV. \
+                 LENGTH: the fugue's own duration_beats at tempo_bpm (default 120), plus a fixed 1.0 s release tail \
+                 so a note ending on the last beat keeps its decay; frames and duration_s include the tail. \
+                 LOOP: `once` renders one pass; {\"times\": n} renders n passes with every event re-emitted a pass later, \
+                 and the tail is added once, after the last; `loop` and `ping_pong` are endless, have no length, and are \
+                 refused here — they apply to live playback via `play`. \
+                 OUTPUT: output_format is \"file\" (the DEFAULT — returns file_path, written to output_path if given) \
+                 or \"wav_base64\" (inline; a minute of stereo is ~30 MB). Any other value is rejected. \
+                 CONTROL SPACE: a `ccs` lane is MIDI bytes 0-127, and that IS the normalized (travel) space the plugin's \
+                 own knob moves in, so a CC sweep sounds exactly like turning that knob — on a log-tapered cutoff, linear \
+                 in octaves. A `params` lane interpolates in the plugin's plain value, which is affine in its normalized \
+                 range, so linear-in-plain is linear-in-travel too. Curves: none (stepped, the default) / linear / exp \
+                 (t^2) / log (1-(1-t)^2), sampled every 64 frames for every lane kind. \
+                 WARNINGS: the response's `warnings` names everything decided on your behalf — an event kind this plugin \
+                 path cannot carry (with a count), a floored block_size, an assumed tempo. \
+                 Flux exposes render_audio taking the SAME argument, but renders through one patch rather than a hosted \
+                 plugin: comparable audio, not equal. Flux reports errors as prose; nexus returns {code, message}."),
         ];
         Self { tools }
     }
@@ -238,6 +255,49 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
+    }
+
+    /// **A typo'd `output_format` is refused, and the message names both
+    /// values.** It used to fall silently through to base64 and hand back tens
+    /// of megabytes of inline audio the caller never asked for — the one place
+    /// FUGUE-API's compatibility rule is knowingly broken (§3.5, ruled §6.6).
+    #[test]
+    fn an_unknown_output_format_is_rejected_naming_both_values() {
+        let registry = ToolRegistry::standard(Arc::new(Stub));
+        let err = block_on(
+            registry
+                .get("render_audio")
+                .unwrap()
+                .invoke(json!({"fugue": {}, "output_format": "wav"})),
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, ErrorCode::InvalidInput);
+        assert!(err.message.contains("file"), "{}", err.message);
+        assert!(err.message.contains("wav_base64"), "{}", err.message);
+
+        // Both real spellings still reach the service (which has no plugin).
+        for spelling in ["file", "wav_base64"] {
+            let err = block_on(
+                registry
+                    .get("render_audio")
+                    .unwrap()
+                    .invoke(json!({"fugue": {}, "output_format": spelling})),
+            )
+            .unwrap_err();
+            assert_eq!(err.code, ErrorCode::NoPlugin, "{spelling} must still parse");
+        }
+    }
+
+    /// The tool description is the only place an agent learns the policies that
+    /// have no field: the tail, the loop refusal, the CC value space.
+    #[test]
+    fn the_render_audio_description_states_the_policies_with_no_field() {
+        let registry = ToolRegistry::standard(Arc::new(Stub));
+        let description = registry.get("render_audio").unwrap().description;
+        for claim in ["1.0 s release tail", "ping_pong", "\"file\" (the DEFAULT", "travel"] {
+            assert!(description.contains(claim), "tool description must say {claim:?}");
+        }
     }
 
     #[test]

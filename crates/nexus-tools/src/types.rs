@@ -578,7 +578,8 @@ pub struct PlayResponse {
 
 // `render_audio`'s request and response now live in `simply-fugue`, so nexus
 // and flux share the type rather than keeping two copies in step by hand. The
-// wire form is unchanged: the response's three added fields are all skipped
-// when unused, and nexus fills none of them.
-pub use nexus_host::fugue::{RenderAudioRequest, RenderAudioResponse};
+// response's `warnings` is filled by [`crate::render::render_response`];
+// `output_format` is a closed enum, so an unrecognised spelling is rejected at
+// the tool boundary instead of silently returning inline audio.
+pub use nexus_host::fugue::{OutputFormat, RenderAudioRequest, RenderAudioResponse};
 
