@@ -13,6 +13,15 @@
 
 ## Unreleased
 
+#### VST3 MIDI controller mapping and per-note expression (`I-97`) · 2026-09-06 12:00 · tppoyvxx
+
+- **Per-note expressions**: `to_vst_event` translates `NoteExpression::{Pressure, Volume, Pan, Tuning, Vibrato, Expression, Brightness}` into VST3 `PolyPressureEvent` (`kPolyPressureEvent`) and `NoteExpressionValueEvent` (`kNoteExpressionValueEvent`), normalizing semitone pitch tuning onto `[0.0, 1.0]` centered at 0.5.
+- **Polyphonic key pressure**: raw MIDI `0xA0` translates to `PolyPressureEvent`.
+- **MIDI controller mapping**: `query_midi_mapping` iterates over channels `0..16`, standard CCs `0..=127`, `kPitchBend`, and `kAfterTouch` via VST3 `IMidiMapping::getMidiControllerAssignment`, mapping incoming raw MIDI messages into normalized VST3 parameter changes (`HostParameterChanges`).
+- **Event support**: `Vst3PluginInstance::event_support()` reports `note_expression: true` and `raw_midi: !midi_map.is_empty()`, allowing `render_offline` to pass through expression lanes and mapped MIDI without spurious warnings.
+
+Gates: `cargo test --workspace` 107 passed / 0 failed / 11 ignored; `cargo clippy -p nexus-host --all-targets` 0 new warnings against baseline.
+
 #### Offline render fixes, automation deduplication & parity (`I-92`–`I-96`) · 2026-09-06 11:38 · wrturnym
 
 - **Arriving-point curve easing (`I-92`)**: `evaluate_curve` reads `k1.interpolation` instead of `k0.interpolation`, matching `flux_contract::Point` / droplets' rule and the shared crate's `PerNotePoint` doc.

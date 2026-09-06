@@ -9,9 +9,10 @@
 use std::path::Path;
 
 use vst3_sdk::Steinberg::Vst::{
-    BusDirection, BusDirections_, BusInfo, IAudioProcessor, IAudioProcessorTrait, IComponent,
-    IComponentTrait, IConnectionPoint, IConnectionPointTrait, IEditController, IEditControllerTrait,
-    IUnitInfoTrait, MediaType, MediaTypes_, ProcessModes_, ProcessSetup, SpeakerArr,
+    BusDirection, BusDirections_, BusInfo, ControllerNumbers_, IAudioProcessor,
+    IAudioProcessorTrait, IComponent, IComponentTrait, IConnectionPoint, IConnectionPointTrait,
+    IEditController, IEditControllerTrait, IMidiMapping, IMidiMappingTrait, IUnitInfoTrait,
+    MediaType, MediaTypes_, ParamID, ProcessModes_, ProcessSetup, SpeakerArr,
     SpeakerArrangement, SymbolicSampleSizes_,
 };
 use vst3_sdk::Steinberg::{FUnknown, IBStream, IPluginBaseTrait, TUID, kResultOk};
@@ -22,7 +23,7 @@ use crate::host::{AudioConfig, AudioProcessor, EventSupport, HostError, PluginIn
 use crate::vst3::editor::Vst3Editor;
 use crate::vst3::host_app::Vst3HostApp;
 use crate::vst3::module::{Vst3Factory, Vst3Module};
-use crate::vst3::process::Vst3AudioProcessor;
+use crate::vst3::process::{MidiControllerMap, Vst3AudioProcessor};
 use crate::vst3::state::HostStream;
 
 /// A loaded VST3 plugin (main-thread side).
@@ -42,6 +43,8 @@ pub struct Vst3PluginInstance {
     module: Vst3Module,
     /// Parameter change ring producer, created on activate.
     param_producer: Option<rtrb::Producer<crate::host::ParamChange>>,
+    /// Mapping from `(channel, ctrl_number)` to VST3 `ParamID`.
+    midi_map: MidiControllerMap,
 }
 
 impl Vst3PluginInstance {
@@ -70,6 +73,8 @@ impl Vst3PluginInstance {
         // The edit controller may be the component itself, or a separate class.
         let controller = unsafe { setup_controller(&module, &component, ctx.as_ptr()) };
 
+        let midi_map = query_midi_mapping(controller.as_ref(), &component);
+
         Ok(Self {
             #[cfg(target_os = "macos")]
             editor: None,
@@ -80,6 +85,7 @@ impl Vst3PluginInstance {
             active: false,
             module,
             param_producer: None,
+            midi_map,
         })
     }
 
@@ -100,14 +106,15 @@ impl Vst3PluginInstance {
 }
 
 impl PluginInstance for Vst3PluginInstance {
-    /// **Neither, and that is deliberate rather than forgotten.** `to_vst_event`
-    /// (`vst3/process.rs`) converts note on/off and drops every other raw-MIDI
-    /// status — CC, pitch bend, channel and poly pressure — and builds no
-    /// `kNoteExpressionValueEvent`, though the VST3 bindings have one. Saying so
-    /// here is what turns a silent drop in the offline renderer into a warning
-    /// the caller can read.
+    /// Beyond note on/off: per-note expressions are converted to VST3
+    /// `NoteExpressionValueEvent` and `PolyPressureEvent`. Raw MIDI CC,
+    /// pitch bend, and aftertouch are delivered to parameter changes
+    /// when mapped via `IMidiMapping`.
     fn event_support(&self) -> EventSupport {
-        EventSupport { raw_midi: false, note_expression: false }
+        EventSupport {
+            raw_midi: !self.midi_map.is_empty(),
+            note_expression: true,
+        }
     }
 
     fn activate(&mut self, config: AudioConfig) -> Result<Box<dyn AudioProcessor>, HostError> {
@@ -168,6 +175,7 @@ impl PluginInstance for Vst3PluginInstance {
         let (producer, consumer) = rtrb::RingBuffer::new(1024);
         self.param_producer = Some(producer);
         let ctrl_clone = self.controller.clone();
+        let midi_map = self.midi_map.clone();
 
         // A fresh (ref-counted) IAudioProcessor handle for the audio thread.
         let audio_processor = self
@@ -182,6 +190,7 @@ impl PluginInstance for Vst3PluginInstance {
             config.max_block_frames,
             consumer,
             ctrl_clone,
+            midi_map,
         )))
     }
 
@@ -481,3 +490,48 @@ fn string_from_utf16(buf: &[vst3_sdk::Steinberg::Vst::TChar]) -> String {
         .collect();
     String::from_utf16_lossy(&units)
 }
+
+/// Query the plugin for its MIDI controller mapping (`IMidiMapping`).
+///
+/// Iterates over 16 MIDI channels, standard CC numbers 0..=127, pitch bend,
+/// and channel pressure / aftertouch. Returns the map of `(channel, ctrl_number) -> ParamID`.
+pub fn query_midi_mapping(
+    controller: Option<&ComPtr<IEditController>>,
+    component: &ComPtr<IComponent>,
+) -> MidiControllerMap {
+    let mut map = MidiControllerMap::new();
+    let midi_mapping: Option<ComPtr<IMidiMapping>> = controller
+        .and_then(|c| c.cast::<IMidiMapping>())
+        .or_else(|| component.cast::<IMidiMapping>());
+
+    let Some(mapping) = midi_mapping else {
+        return map;
+    };
+
+    // Bus 0 is the main event/MIDI input bus.
+    for channel in 0..16 {
+        for cc in 0..=127 {
+            let mut param_id: ParamID = 0;
+            if unsafe { mapping.getMidiControllerAssignment(0, channel, cc, &mut param_id) }
+                == kResultOk
+            {
+                map.insert((channel, cc), param_id);
+            }
+        }
+        for &ctrl in &[
+            ControllerNumbers_::kAfterTouch as i16,
+            ControllerNumbers_::kPitchBend as i16,
+            ControllerNumbers_::kCtrlPolyPressure as i16,
+        ] {
+            let mut param_id: ParamID = 0;
+            if unsafe { mapping.getMidiControllerAssignment(0, channel, ctrl, &mut param_id) }
+                == kResultOk
+            {
+                map.insert((channel, ctrl), param_id);
+            }
+        }
+    }
+
+    map
+}
+
