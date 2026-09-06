@@ -111,12 +111,12 @@ impl ToolRegistry {
             tool!(service, "convert_param_value", TimeoutClass::Default, ConvertParamValueRequest => ConvertParamValueResponse, convert_param_value,
                 "Convert a parameter value to display text, or parse display text into a plain value."),
             tool!(service, "play", TimeoutClass::Default, PlayRequest => PlayResponse, play,
-                "Queue a musical performance (Droplets Fugue format: notes, CCs, automation ramps) for live transport-synced playback."),
+                "Queue a musical performance (Fugue format: notes, CCs, automation ramps) for live transport-synced playback."),
             tool!(service, "render_audio", TimeoutClass::Load, RenderAudioRequest => RenderAudioResponse, render_audio,
                 "Render a fugue offline through the loaded plugin at max CPU speed, without an audio driver. \
                  Returns audio metrics and 32-bit float WAV. \
                  LENGTH: the fugue's own duration_beats at tempo_bpm (default 120), plus a fixed 1.0 s release tail \
-                 so a note ending on the last beat keeps its decay; frames and duration_s include the tail. \
+                 so a note ending on the last beat keeps its decay; frames and duration_s include the tail (maximum total duration is 60 s). \
                  LOOP: `once` renders one pass; {\"times\": n} renders n passes with every event re-emitted a pass later, \
                  and the tail is added once, after the last; `loop` and `ping_pong` are endless, have no length, and are \
                  refused here — they apply to live playback via `play`. \

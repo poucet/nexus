@@ -21,7 +21,7 @@ Nexus allows AI agents to discover, load, configure, perform with, and sample ar
 
 4. **Fugue Musical Performance & Sampling**:
    - `play`: Send a transport-synchronized performance (notes, CCs, automation ramps) to the live host.
-   - `render_audio`: Render audio offline at max CPU speed without an audio driver. Returns audio metrics (`peak_db`, `rms_db`, `duration_s`) and 32-bit float WAV data (base64 or file path) for listening and patch analysis.
+   - `render_audio`: Render audio offline at max CPU speed without an audio driver. Returns audio metrics (`peak_db`, `rms_db`, `duration_s`) and 32-bit float WAV data (defaults to file, or wav_base64) for listening and patch analysis.
 
 5. **State Decoding & Structural Edits**:
    - `decode_state`: Decode the stored binary state into a structured JSON document.

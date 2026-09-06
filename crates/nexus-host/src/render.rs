@@ -26,6 +26,10 @@ use simply_fugue::types::{InterpolationMode, LoopMode};
 /// `duration_s` include it.
 pub const RELEASE_TAIL_S: f64 = 1.0;
 
+/// Maximum allowed offline render length in seconds. Matches flux's policy (flux
+/// refuses past 60 s) to guard against accidental multi-hundred-megabyte float WAVs (I-96).
+pub const MAX_DURATION_S: f64 = 60.0;
+
 /// The smallest block the renderer will run. A smaller `block_size` is raised
 /// to this and the caller is told in `warnings`.
 pub const MIN_BLOCK_FRAMES: usize = 64;
@@ -297,6 +301,13 @@ pub fn render_offline(
     let total_frames = musical_frames + tail_frames;
     let duration_s = total_frames as f64 / sample_rate;
 
+    if duration_s > MAX_DURATION_S {
+        return Err(HostError::InvalidRequest(format!(
+            "render duration ({duration_s:.1} s) exceeds the maximum allowed offline length ({MAX_DURATION_S:.0} s); \
+             shorten the fugue or reduce loop passes"
+        )));
+    }
+
     warnings.push(format!(
         "rendered {pass_beats} beat(s){} at {tempo} BPM plus a fixed {RELEASE_TAIL_S:.1} s \
          release tail; frames and duration_s include the tail",
@@ -522,9 +533,10 @@ pub fn render_offline(
     let mut block_events: Vec<(u32, bool, Event)> = Vec::new();
     let mut block_params: Vec<ParamChange> = Vec::new();
     let mut lane_points: Vec<(u32, f64)> = Vec::new();
-    // The last value actually sent per CC and per expression lane, so that a
+    // The last value actually sent per param, CC, and per expression lane, so that a
     // held value is not re-sent at every grid point — which is also what keeps
     // a curve-less lane exactly one instantaneous byte, as it has always been.
+    let mut last_param: BTreeMap<u32, f64> = BTreeMap::new();
     let mut last_cc: BTreeMap<(u8, u8), u8> = BTreeMap::new();
     let mut last_expression: BTreeMap<(NoteExpression, u8, u8), f64> = BTreeMap::new();
 
@@ -549,32 +561,39 @@ pub fn render_offline(
             event_idx += 1;
         }
 
-        // Parameter lanes, on the shared grid.
+        // Parameter lanes, on the shared grid. Held values are not re-sent (I-95).
         for (&param_id, keyframes) in &param_tracks {
             sample_lane(keyframes, current_frame, block_frames, step, &mut lane_points);
             for &(offset_frames, value) in &lane_points {
+                if last_param.get(&param_id) == Some(&value) {
+                    continue;
+                }
+                last_param.insert(param_id, value);
                 block_params.push(ParamChange { id: param_id, value, offset_frames });
             }
         }
         block_params.sort_by_key(|p| p.offset_frames);
 
-        // Deliver parameter changes to ring buffer and facade event list
+        // Deliver parameter changes: to the rtrb ring buffer if the instance provides
+        // one, or to the facade event list if not. Pushing to both caused CLAP plugins
+        // to receive every parameter change twice (I-94).
         for change in &block_params {
             if let Some(producer) = instance.param_producer() {
                 let _ = producer.push(*change);
+            } else {
+                block_events.push((
+                    change.offset_frames,
+                    false,
+                    Event::ParamValue {
+                        param_id: change.id,
+                        note_id: -1,
+                        port_index: 0,
+                        channel: 0,
+                        key: 0,
+                        value: change.value,
+                    },
+                ));
             }
-            block_events.push((
-                change.offset_frames,
-                false,
-                Event::ParamValue {
-                    param_id: change.id,
-                    note_id: -1,
-                    port_index: 0,
-                    channel: 0,
-                    key: 0,
-                    value: change.value,
-                },
-            ));
         }
 
         // CC lanes, on the same grid, rounded to a byte. `None` (the default)
@@ -1319,6 +1338,146 @@ mod tests {
             result.warnings.iter().any(|w| w.contains("block_size 16 raised to 64")),
             "{:?}",
             result.warnings
+        );
+    }
+
+    /// A render whose total duration exceeds 60 seconds is refused (flux parity, I-96).
+    #[test]
+    fn render_duration_exceeding_ceiling_is_refused() {
+        let mut inst = RecordingInstance::new(everything());
+        // 130 beats at 120 bpm = 65 seconds (> 60 s ceiling)
+        let fugue = CompositeFugue { duration_beats: Some(130.0), ..Default::default() };
+        let err = render_offline(
+            &mut inst,
+            &RenderOptions { fugue: fugue.compile(), ..Default::default() },
+        )
+        .expect_err("duration exceeding 60 s must be refused");
+
+        let HostError::InvalidRequest(msg) = err else {
+            panic!("expected InvalidRequest, got {err:?}");
+        };
+        assert!(msg.contains("exceeds the maximum allowed offline length"), "{msg}");
+    }
+
+    /// A `params` lane does not re-send held values at every automation step (I-95).
+    #[test]
+    fn param_held_values_are_not_resent_every_block() {
+        // A 2-beat fugue at 120 bpm = 1.0 s (+ 1.0 s tail = 2.0 s total = 96,000 frames = 1500 automation steps).
+        // Two points: (0.0, 0.2) and (0.5, 0.8).
+        let mut params = std::collections::HashMap::new();
+        params.insert(
+            1,
+            vec![
+                simply_fugue::composite::ParamPointItem {
+                    beat: 0.0,
+                    value: 0.2,
+                    curve: InterpolationMode::None,
+                },
+                simply_fugue::composite::ParamPointItem {
+                    beat: 0.5,
+                    value: 0.8,
+                    curve: InterpolationMode::None,
+                },
+            ],
+        );
+        let fugue = CompositeFugue {
+            duration_beats: Some(2.0),
+            params,
+            ..Default::default()
+        };
+        let (events, _) = recorded(fugue, everything());
+        let param_events: Vec<&Event> = events
+            .iter()
+            .map(|(_, e)| e)
+            .filter(|e| matches!(e, Event::ParamValue { param_id: 1, .. }))
+            .collect();
+        // With stepped interpolation, there are exactly 2 distinct value changes: 0.2 and 0.8.
+        assert_eq!(param_events.len(), 2, "held parameter values must not be repeated: {param_events:?}");
+    }
+
+    /// Parameter changes are delivered to param_producer when available and NOT duplicated
+    /// in block_events (I-94).
+    #[test]
+    fn param_changes_not_duplicated_when_producer_present() {
+        struct ProducerAndEventTrackingInstance {
+            param_producer: Option<rtrb::Producer<ParamChange>>,
+            received_block_events: Arc<Mutex<Vec<Event>>>,
+        }
+
+        impl PluginInstance for ProducerAndEventTrackingInstance {
+            fn activate(&mut self, _config: AudioConfig) -> Result<Box<dyn AudioProcessor>, HostError> {
+                let (producer, consumer) = rtrb::RingBuffer::new(1024);
+                self.param_producer = Some(producer);
+                Ok(Box::new(TrackingProcessor {
+                    _consumer: consumer,
+                    events: self.received_block_events.clone(),
+                }))
+            }
+
+            fn deactivate(&mut self) {
+                self.param_producer = None;
+            }
+
+            fn param_producer(&mut self) -> Option<&mut rtrb::Producer<ParamChange>> {
+                self.param_producer.as_mut()
+            }
+
+            fn take_param_producer(&mut self) -> Option<rtrb::Producer<ParamChange>> {
+                self.param_producer.take()
+            }
+        }
+
+        struct TrackingProcessor {
+            _consumer: rtrb::Consumer<ParamChange>,
+            events: Arc<Mutex<Vec<Event>>>,
+        }
+
+        impl AudioProcessor for TrackingProcessor {
+            fn start_processing(&mut self) -> Result<(), HostError> { Ok(()) }
+            fn stop_processing(&mut self) {}
+            fn process(&mut self, block: &mut ProcessBlock<'_>) {
+                let mut evs = self.events.lock().unwrap();
+                for timed in block.events.iter() {
+                    evs.push(timed.event.clone());
+                }
+            }
+        }
+
+        let events_seen = Arc::new(Mutex::new(Vec::new()));
+        let mut inst = ProducerAndEventTrackingInstance {
+            param_producer: None,
+            received_block_events: events_seen.clone(),
+        };
+
+        let mut params = std::collections::HashMap::new();
+        params.insert(
+            1,
+            vec![simply_fugue::composite::ParamPointItem {
+                beat: 0.0,
+                value: 0.5,
+                curve: InterpolationMode::None,
+            }],
+        );
+        let fugue = CompositeFugue {
+            duration_beats: Some(1.0),
+            params,
+            ..Default::default()
+        };
+
+        let result = render_offline(
+            &mut inst,
+            &RenderOptions { fugue: fugue.compile(), ..Default::default() },
+        );
+        assert!(result.is_ok());
+
+        let locked = events_seen.lock().unwrap();
+        let param_events_in_block: Vec<&Event> = locked
+            .iter()
+            .filter(|e| matches!(e, Event::ParamValue { .. }))
+            .collect();
+        assert!(
+            param_events_in_block.is_empty(),
+            "ParamValue must not be pushed to block_events when param_producer is present (I-94), but found {param_events_in_block:?}"
         );
     }
 }

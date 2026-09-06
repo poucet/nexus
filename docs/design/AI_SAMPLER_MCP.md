@@ -76,7 +76,7 @@ Renders audio offline at maximum computational speed through the loaded plugin �
 
 - **Rendering rules**, the same numbers as flux so one fugue measures the same on both hosts: CC bytes `0–127` go to the plugin untouched — they *are* the normalized (travel) space its own knob moves in, so a CC sweep behaves like turning that knob; a CC or per-note lane with a curve is a ramp sampled every 64 frames (values rounded to a byte, held values not re-sent) and a curve-less lane stays one instantaneous byte per point; `params` lanes interpolate in the plugin's plain value on the same grid; a note-off precedes a note-on at the same sample.
 
-- **Asymmetries with flux**: flux renders through one patch and nexus through a hosted plugin, so identical calls give comparable, not equal, audio; flux refuses a musical length past 60 s where nexus has no ceiling; flux reports errors as prose, nexus as `{code, message}`.
+- **Asymmetries with flux**: flux renders through one patch and nexus through a hosted plugin, so identical calls give comparable, not equal, audio; both hosts refuse renders past 60 s (I-96); flux reports errors as prose, nexus as `{code, message}`.
 
 ### 2. `list_plugins` & `load_plugin`
 

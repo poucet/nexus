@@ -13,6 +13,16 @@
 
 ## Unreleased
 
+#### Offline render fixes, automation deduplication & parity (`I-92`–`I-96`) · 2026-09-06 11:38 · wrturnym
+
+- **Arriving-point curve easing (`I-92`)**: `evaluate_curve` reads `k1.interpolation` instead of `k0.interpolation`, matching `flux_contract::Point` / droplets' rule and the shared crate's `PerNotePoint` doc.
+- **No double parameter delivery to CLAP plugins (`I-94`)**: `render_offline` delivers `ParamChange` to `param_producer` when available, and only falls back to `block_events` when the instance has no ring buffer, eliminating duplicated `ParamValueEvent`s in CLAP.
+- **Param lane held values not repeated (`I-95`)**: `render_offline` tracks `last_param` and suppresses repeated emissions of unchanged values on the 64-frame grid, matching the rule used by CC and expression lanes.
+- **60 s duration ceiling (`I-96`)**: offline rendering refuses fugues exceeding 60.0 s (`MAX_DURATION_S`) with `HostError::InvalidRequest`, matching flux's ceiling and guarding against multi-hundred-megabyte WAV allocations.
+- **Stale prose updated (`I-93`)**: `play` tool description updated from "Droplets Fugue format" to "Fugue format", `render_audio` docs note the 60 s maximum length, and `instructions.md` explicitly names `file` as the default output format.
+
+Gates: `cargo test --workspace` 104 passed / 0 failed / 11 ignored; `cargo clippy --workspace --all-targets` 0 new warnings against baseline.
+
 #### `render_audio` renders what the fugue says (`FUGUENEXUS-2`) · 2026-09-04 23:19 · vwwnyskw, wzsyxqru, wvyzxrsm, tswpsmmv
 
 The behaviour half of FUGUE-API.md §6's ruling (the design lives in flux, `docs/design/FUGUE-API.md` §6.1, §6.2, §6.6, §6.7), on nexus's side. **Every item below changes what already-valid fugue JSON sounds like** — that is the ruling — and every policy is the same number as flux's `FUGUEONE`, so one fugue measures the same on both hosts. Evidence: @docs/research/render-audio-fixture-table.md, the 12 shared fixtures rendered before and after.

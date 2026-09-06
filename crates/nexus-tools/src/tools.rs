@@ -59,7 +59,7 @@ pub trait NexusTools: Send + Sync {
     // -----------------------------------------------------------------------
     // Performance & Sampling
 
-    /// Queue a transport-synchronized musical performance into the host (Droplets fugue model).
+    /// Queue a transport-synchronized musical performance into the host (Fugue format).
     async fn play(&self, req: PlayRequest) -> Result<PlayResponse, ToolError>;
 
     /// Render audio offline through the plugin at max CPU speed without an audio driver.
