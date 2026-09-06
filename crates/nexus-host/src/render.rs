@@ -165,8 +165,10 @@ pub fn evaluate_curve(keyframes: &[Keyframe], s: usize) -> Option<f64> {
             if span == 0 {
                 return Some(k1.value);
             }
+            // A segment is eased using the curve of the keyframe arriving at
+            // k1 (flux_contract::Point / droplets' rule, verbatim; flux I-92).
             let t = (s - k0.sample_offset) as f64 / span as f64;
-            return Some(k0.value + (k1.value - k0.value) * curve_factor(k0.interpolation, t));
+            return Some(k0.value + (k1.value - k0.value) * curve_factor(k1.interpolation, t));
         }
     }
     Some(keyframes.last().unwrap().value)
@@ -840,12 +842,12 @@ mod tests {
         assert_eq!(evaluate_curve(&keyframes, 50), Some(0.0));
         // At first point
         assert_eq!(evaluate_curve(&keyframes, 100), Some(0.0));
-        // Midpoint of Linear (150 -> 5.0)
-        assert_eq!(evaluate_curve(&keyframes, 150), Some(5.0));
+        // Midpoint of segment arriving at keyframes[1] (Exp: t=0.5 -> t^2=0.25 -> 0 + 10*0.25 = 2.5)
+        assert_eq!(evaluate_curve(&keyframes, 150), Some(2.5));
         // At second point
         assert_eq!(evaluate_curve(&keyframes, 200), Some(10.0));
-        // Midpoint of Exp (250 -> t=0.5 -> t^2=0.25 -> 10 + 10*0.25 = 12.5)
-        assert_eq!(evaluate_curve(&keyframes, 250), Some(12.5));
+        // Midpoint of segment arriving at keyframes[2] (None: stepped holds k0.value = 10.0)
+        assert_eq!(evaluate_curve(&keyframes, 250), Some(10.0));
         // At third point
         assert_eq!(evaluate_curve(&keyframes, 300), Some(20.0));
         // After last point
@@ -926,7 +928,7 @@ mod tests {
                 simply_fugue::composite::ParamPointItem {
                     beat: 1.0,
                     value: 1.0,
-                    curve: InterpolationMode::None,
+                    curve: InterpolationMode::Linear,
                 },
             ],
         );
@@ -1044,13 +1046,35 @@ mod tests {
         }
     }
 
+    /// **A segment eases with the arriving point's curve, not the departing
+    /// point's** (flux `I-92`). `[[0, 0, "linear"], [1, 1, "exp"]]` is an `exp`
+    /// rise (midpoint 0.25), not linear (0.50).
+    #[test]
+    fn a_segment_eases_with_the_arriving_points_curve() {
+        let keyframes = vec![
+            Keyframe {
+                sample_offset: 0,
+                value: 0.0,
+                interpolation: InterpolationMode::Linear,
+            },
+            Keyframe {
+                sample_offset: 100,
+                value: 1.0,
+                interpolation: InterpolationMode::Exp,
+            },
+        ];
+
+        // Midpoint: t=0.5 -> Exp arrival = 0.5^2 = 0.25. Linear departure would have been 0.50.
+        assert_eq!(evaluate_curve(&keyframes, 50), Some(0.25));
+    }
+
     /// **A CC lane with a curve becomes a ramp; a curve-less one stays a single
     /// byte** (flux `I-50`, §1.2c). The second half is what makes this
     /// backward-compatible: no fugue written before today gains an event.
     #[test]
     fn a_cc_curve_ramps_and_a_curve_less_lane_does_not() {
         let ramped: CompositeFugue =
-            serde_json::from_str(r#"{"duration_beats":1,"ccs":{"74":[[0,0,"linear"],[1,127]]}}"#)
+            serde_json::from_str(r#"{"duration_beats":1,"ccs":{"74":[[0,0],[1,127,"linear"]]}}"#)
                 .unwrap();
         let (events, _) = recorded(ramped, everything());
         let values: Vec<u8> = events
