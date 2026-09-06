@@ -1190,6 +1190,30 @@ mod tests {
         );
     }
 
+    /// Multi-channel CC lanes (`I-53`): a lane keyed by `"channel:controller"`
+    /// (e.g. `"2:74"`) delivers CC messages on that MIDI channel (`0xB2`).
+    #[test]
+    fn multi_channel_cc_lane_delivers_on_specified_channel() {
+        let fugue: CompositeFugue = serde_json::from_str(
+            r#"{"duration_beats": 1,
+                "ccs": {
+                    "74": [[0, 10]],
+                    "2:74": [[0, 50]]
+                }}"#,
+        )
+        .unwrap();
+
+        let (events, _) = recorded(fugue, everything());
+        assert!(
+            events.contains(&(0, Event::Midi { port_index: 0, data: [0xB0, 74, 10] })),
+            "channel 0 CC 74 at frame 0: {events:?}"
+        );
+        assert!(
+            events.contains(&(0, Event::Midi { port_index: 0, data: [0xB2, 74, 50] })),
+            "channel 2 CC 74 at frame 0: {events:?}"
+        );
+    }
+
     /// A host path that cannot carry a kind **says so**, with the kind and the
     /// count. That is the whole point of `I-48`'s second half.
     #[test]

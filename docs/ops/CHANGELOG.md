@@ -13,6 +13,13 @@
 
 ## Unreleased
 
+#### Multi-channel CC support verified against shared crate (`I-53`, `I-91`) · 2026-09-06 18:20 · omkzwslr
+
+- **Multi-channel CC verified (`I-53`)**: Verified `render_offline` with `CompositeFugue`'s new `CcTarget` support; CC lanes specified as `"channel:controller"` (e.g. `"2:74"`) deliver MIDI CC messages on the designated channel.
+- **Shared crate doc parity (`I-91`)**: Updated `music-rs` doc comments across `lib.rs`, `types.rs`, and `composite.rs` reflecting full CLAP/VST3 per-note expression support in Nexus and native support in Flux.
+
+Gates: `cargo test --workspace` 108 passed / 0 failed / 11 ignored; `cargo clippy -p nexus-host --all-targets` 0 new warnings against baseline.
+
 #### VST3 MIDI controller mapping and per-note expression (`I-97`) · 2026-09-06 12:00 · tppoyvxx
 
 - **Per-note expressions**: `to_vst_event` translates `NoteExpression::{Pressure, Volume, Pan, Tuning, Vibrato, Expression, Brightness}` into VST3 `PolyPressureEvent` (`kPolyPressureEvent`) and `NoteExpressionValueEvent` (`kNoteExpressionValueEvent`), normalizing semitone pitch tuning onto `[0.0, 1.0]` centered at 0.5.

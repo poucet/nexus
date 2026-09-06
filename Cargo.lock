@@ -4411,7 +4411,6 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 [[package]]
 name = "simply-fugue"
 version = "0.1.0"
-source = "git+https://github.com/poucet/music-rs.git#bd774ec26fe983522687bcf0dd7a30da953bf0a6"
 dependencies = [
  "schemars",
  "serde",
