@@ -80,6 +80,18 @@ fn a_deactivated_plugin_activates_again_at_a_new_sample_rate() {
     instance.deactivate();
 }
 
+#[test]
+fn set_param_before_activation_is_kept() {
+    let mut instance = load(&test_plugin());
+    instance.set_param(param::VOLUME, 0.25).unwrap();
+    assert_eq!(instance.param_value(param::VOLUME), Some(0.25), "the plugin saw the value");
+
+    let mut processor = instance.activate(config(48_000.0)).unwrap();
+    processor.start_processing().unwrap();
+    assert_eq!(Blocks::new().run(processor.as_mut()), 0.25, "and the audio is scaled by it");
+    processor.stop_processing();
+}
+
 /// `NEXUS_REAL_PLUGIN_TEST=1`: the same contract on installed free plugins.
 #[test]
 fn installed_plugins_take_parameter_changes_without_allocating() {

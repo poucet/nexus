@@ -2,10 +2,13 @@
 //!
 //! These are main-thread queries against the plugin's `PluginParams` extension.
 //! Host-initiated parameter *changes* travel as `Event::ParamValue` in the
-//! process event list (wired with the engine / `nexus-wrap`).
+//! process event list or the parameter ring while the plugin is active, and
+//! through [`flush_inactive`] while it is not.
 
 use clack_extensions::params::{ParamInfoBuffer, ParamInfoFlags, PluginParams};
+use clack_host::events::event_types::ParamValueEvent;
 use clack_host::prelude::*;
+use clack_host::utils::Cookie;
 
 use crate::clap::host::NexusHost;
 use crate::host::ParamInfo;
@@ -75,6 +78,29 @@ pub fn text_to_value(
     let id = ClapId::from_raw(id)?;
     let c_str = std::ffi::CString::new(text).ok()?;
     params.text_to_value(&mut handle, id, &c_str)
+}
+
+/// Set parameter `id` to the plain `value` on an **inactive** plugin, through
+/// the `params` extension's main-thread `flush`. Returns `false` when the
+/// plugin is active (the change then goes through the audio thread) or has no
+/// `params` extension.
+pub fn flush_inactive(instance: &mut PluginInstance<NexusHost>, id: u32, value: f64) -> bool {
+    let Some(params) = instance.plugin_handle().get_extension::<PluginParams>() else {
+        return false;
+    };
+    let Some(mut handle) = instance.inactive_plugin_handle() else {
+        return false;
+    };
+    let mut events = EventBuffer::with_capacity(1);
+    events.push(&ParamValueEvent::new(
+        0,
+        ClapId::from(id),
+        Pckn::match_all(),
+        value,
+        Cookie::empty(),
+    ));
+    params.flush(&mut handle, &events.as_input(), &mut OutputEvents::void());
+    true
 }
 
 #[cfg(test)]

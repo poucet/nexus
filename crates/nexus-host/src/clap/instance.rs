@@ -131,15 +131,27 @@ impl HostPluginInstance for ClapPluginInstance {
         self.param_producer.take()
     }
 
+    /// Active: queued on the parameter ring for the next block. Inactive: the
+    /// plugin applies it now, through `params.flush` on this thread.
     fn set_param(&mut self, id: u32, value: f64) -> Result<(), HostError> {
-        if let Some(producer) = &mut self.param_producer {
-            let _ = producer.push(crate::host::ParamChange {
-                id,
-                value,
-                offset_frames: 0,
-            });
+        if self.instance.is_active() {
+            let change = crate::host::ParamChange { id, value, offset_frames: 0 };
+            return match &mut self.param_producer {
+                Some(producer) => producer
+                    .push(change)
+                    .map_err(|_| HostError::Load("parameter ring full".into())),
+                // The caller took the ring (`take_param_producer`) and owns
+                // the changes from here on.
+                None => Err(HostError::Load(
+                    "the parameter ring was taken; push to it instead".into(),
+                )),
+            };
         }
-        Ok(())
+        if crate::clap::params::flush_inactive(&mut self.instance, id, value) {
+            Ok(())
+        } else {
+            Err(HostError::Load("plugin has no params extension".into()))
+        }
     }
 
     fn params(&mut self) -> Vec<crate::host::ParamInfo> {

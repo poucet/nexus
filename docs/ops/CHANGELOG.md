@@ -14,6 +14,11 @@
 
 ## Unreleased
 
+#### CLAP `set_param` works before activation (`I-103`) · 2026-10-25 21:57 · xlrmsxxlulno
+
+- On an inactive CLAP plugin `set_param` now applies the value through the `params` extension's main-thread `flush`, so `param_value` and the first block both see it; the `set_params` tool on a not-yet-playing instance (nexus-mcp, nexus-app, nexus-wrap) is no longer a silent no-op.
+- On an active one it still queues on the parameter ring, but **returns an error when the ring is full or was taken** (`take_param_producer`) instead of dropping the change and returning `Ok`.
+
 #### CLAP plugins deactivate, so they can be activated again (`I-102`) · 2026-10-25 21:57 · uvtppupwxzxl
 
 - `PluginInstance::deactivate()` on CLAP now really deactivates (clack's `try_deactivate`), once the audio processor from `activate()` has been dropped; with the processor still alive it logs a warning and leaves the plugin active. `activate()` tears down a previous activation itself, so a sample-rate change no longer needs a reload.
