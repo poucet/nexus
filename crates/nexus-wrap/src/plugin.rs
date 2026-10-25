@@ -334,6 +334,9 @@ impl<'a> PluginAudioProcessor<'a, NexusWrapShared<'a>, NexusWrapMainThread<'a>> 
     }
 
     fn deactivate(self, main_thread: &mut NexusWrapMainThread<'a>) {
+        // The inner processor goes first: a CLAP instance only deactivates once
+        // its processor is gone.
+        drop(self.inner_processor);
         main_thread.inner.deactivate();
     }
 }

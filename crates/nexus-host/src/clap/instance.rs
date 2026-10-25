@@ -91,6 +91,10 @@ impl HostPluginInstance for ClapPluginInstance {
             max_frames_count: config.max_block_frames as u32,
         };
 
+        // Re-activating (a new sample rate, say) needs the old activation torn
+        // down first; the caller has already dropped its processor.
+        self.deactivate();
+
         let (producer, consumer) = rtrb::RingBuffer::new(1024);
         self.param_producer = Some(producer);
 
@@ -107,11 +111,16 @@ impl HostPluginInstance for ClapPluginInstance {
         )))
     }
 
+    /// The processor [`activate`](Self::activate) returned must have been
+    /// dropped first (it holds the other half of clack's activation); if it is
+    /// still alive this logs and leaves the plugin active.
     fn deactivate(&mut self) {
         self.param_producer = None;
-        // clack tears the plugin down when the instance is dropped; the engine
-        // drops the (stopped) audio processor before this. Explicit
-        // processor-returning deactivation can be revisited if needed.
+        if self.instance.is_active()
+            && let Err(e) = self.instance.try_deactivate()
+        {
+            log::warn!("CLAP deactivate: {e}; drop the audio processor first");
+        }
     }
 
     fn param_producer(&mut self) -> Option<&mut rtrb::Producer<crate::host::ParamChange>> {

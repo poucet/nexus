@@ -671,6 +671,7 @@ pub fn render_offline(
     }
 
     processor.stop_processing();
+    drop(processor);
     instance.deactivate();
 
     // 4. Compute audio telemetry (peak and RMS)

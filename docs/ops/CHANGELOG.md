@@ -14,6 +14,11 @@
 
 ## Unreleased
 
+#### CLAP plugins deactivate, so they can be activated again (`I-102`) · 2026-10-25 21:57 · uvtppupwxzxl
+
+- `PluginInstance::deactivate()` on CLAP now really deactivates (clack's `try_deactivate`), once the audio processor from `activate()` has been dropped; with the processor still alive it logs a warning and leaves the plugin active. `activate()` tears down a previous activation itself, so a sample-rate change no longer needs a reload.
+- `render_offline` and `nexus-wrap`'s audio-processor teardown drop the inner processor before deactivating.
+
 #### CLAP `request_callback` no longer allocates on the audio thread (`I-101`) · 2026-10-25 22:00 · zmmvqynt
 
 - `request_callback` sets a flag instead of sending on an unbounded channel; `pump()` runs `on_main_thread` once per pump however many requests arrived. JUCE plugins call it from `process()` per parameter change, so this was an allocation every 31 changes on the audio thread.

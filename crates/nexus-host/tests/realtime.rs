@@ -11,7 +11,7 @@
 mod common;
 
 use common::{Blocks, FRAMES, allocations, config, load, param, real_plugins, test_plugin};
-use nexus_host::ParamChange;
+use nexus_host::{ParamChange, PluginFormat};
 use nexus_host::process::Event;
 
 #[global_allocator]
@@ -60,6 +60,26 @@ fn parameter_changes_reach_the_plugin_without_allocating() {
     processor.stop_processing();
 }
 
+#[test]
+fn a_deactivated_plugin_activates_again_at_a_new_sample_rate() {
+    let mut instance = load(&test_plugin());
+    let mut blocks = Blocks::new();
+    for rate in [48_000.0, 44_100.0, 96_000.0] {
+        let mut processor = instance
+            .activate(config(rate))
+            .unwrap_or_else(|e| panic!("activate at {rate}: {e}"));
+        processor.start_processing().unwrap();
+        instance.set_param(param::VOLUME, 0.5).unwrap();
+        assert_eq!(blocks.run(processor.as_mut()), 0.5);
+        processor.stop_processing();
+        drop(processor);
+        instance.deactivate();
+        assert_eq!(instance.param_value(param::SAMPLE_RATE), Some(rate));
+    }
+    // Deactivating twice is harmless.
+    instance.deactivate();
+}
+
 /// `NEXUS_REAL_PLUGIN_TEST=1`: the same contract on installed free plugins.
 #[test]
 fn installed_plugins_take_parameter_changes_without_allocating() {
@@ -94,7 +114,9 @@ fn installed_plugins_take_parameter_changes_without_allocating() {
             processor.stop_processing();
             drop(processor);
             instance.deactivate();
-            break; // re-activation is I-102's
+            if plugin.format == PluginFormat::Vst3 {
+                break; // VST3 re-activation already worked; the round trip is CLAP's I-102
+            }
         }
         eprintln!("{name}: 0 allocations in {BLOCKS} blocks with parameter changes");
     }
