@@ -5,6 +5,7 @@
 | Dates | Tag | |
 |---|---|---|
 | 2026-10-25 → … | — | **[Unreleased](#unreleased)** |
+| 2026-10-25 | `v0.5.0` | [Realtime-safe hosting](#v050--realtime-safe-hosting-re-activation--transport) — no allocation in `process()` on either format, CLAP re-activation and pre-activation params, the transport reaches plugins |
 | 2026-09-01 → 10-25 | `v0.4.0` | [Render parity & VST3 MIDI](#v040--render-parity-vst3-midi-mapping--a-pinned-shared-crate) — `render_audio` renders what the fugue says, VST3 `IMidiMapping` and note expressions, `simply-fugue` from music-rs by tag |
 | 2026-09-01 | `v0.3.0` | [Milestone 0.3: Plugin Wrapper & Automation](#v030--in-daw-wrapper-parameter-automation--cross-platform-linux) — `nexus-wrap` CLAP plugin, realtime parameter ring, Linux/Docker support, AI patch reconstruction design |
 | 2026-08-26 → 09-01 | `v0.2.0` | [Milestone 0.2: State Tools & AI Sampler](#v020--state-tools--ai-sampler) — MCP server, driver-free offline rendering, Fugue sequencing, codecs |
@@ -14,25 +15,33 @@
 
 ## Unreleased
 
-#### The transport reaches plugins: tempo, play state, position (`I-104`) · 2026-10-25 22:02 · kktynxztplzq
+---
+
+## v0.5.0 — Realtime-safe hosting, re-activation & transport
+
+**Tagged `v0.5.0` · 2026-10-25 22:02 · uotyonxw** — fixes `N3`–`N7` from tussen's SP-NEXUS spike (`I-100`–`I-104`).
+
+Gates: `cargo test --workspace --locked` 122 passed / 0 failed / 11 ignored (109 before); `cargo clippy --workspace --all-targets --locked` 23 warnings (24 before, none new); `NEXUS_REAL_PLUGIN_TEST=1 cargo test -p nexus-host --test realtime` 6 passed, 0 allocations in 2 000 blocks on TAL-Filter-2 and Surge XT Effects, CLAP and VST3.
+
+#### The transport reaches plugins: tempo, play state, position (`I-104`) · 2026-10-25 22:02 · kktynxzt
 
 - **New `process::TransportClock`**: the newest `Event::Transport` in a block sets the transport; blocks without one continue from it, advanced by the audio while playing. Send a `Transport` when it changes (start, stop, tempo, jump), not every block. Before the first one there is none (a free-running host), as before.
 - **CLAP**: `process` gets a `clap_event_transport` every block (tempo, beats and seconds timelines, time signature, bar start and number, playing / loop flags). **VST3**: `ProcessContext` is filled (`kPlaying`, tempo, time signature, project time in samples and quarter notes, bar position, continuous time) instead of null.
 - `Transport::bar()` gives the bar number and start; `song_pos_beats` is documented as quarter notes.
 - **`render_offline` now plays from the top at the fugue's tempo** (4/4): the first block carries a `Transport`, so tempo-synced plugins render in time. Plugins that ignored the missing transport render as before.
 
-#### VST3 processing allocates nothing and never touches the edit controller (`I-100`) · 2026-10-25 22:00 · kmppzvypovlk
+#### VST3 processing allocates nothing and never touches the edit controller (`I-100`) · 2026-10-25 22:00 · kmppzvyp
 
 - `Vst3AudioProcessor::process` no longer builds a `BTreeMap` of `Vec`s per block: `HostParameterChanges` preallocates 256 parameter queues of 32 points, and a block only resets and fills them. Overflow is dropped and counted (`dropped()`), keeping each parameter's newest value.
 - Plain → normalised conversion no longer calls `IEditController::plainParamToNormalized` on the audio thread. `activate()` samples every parameter's curve from the controller into a `vst3::params::Normalizer`: exact for linear and stepped parameters (and the identity JUCE plugins use), piecewise-linear over 33 samples for any other curve. The processor no longer holds the controller at all.
 - Measured with `NEXUS_REAL_PLUGIN_TEST=1`: TAL-Filter-2 and Surge XT Effects VST3, 2 000 blocks with a parameter change each, **0 allocations** (6 000 before).
 
-#### CLAP `set_param` works before activation (`I-103`) · 2026-10-25 21:57 · xlrmsxxlulno
+#### CLAP `set_param` works before activation (`I-103`) · 2026-10-25 21:57 · xlrmsxxl
 
 - On an inactive CLAP plugin `set_param` now applies the value through the `params` extension's main-thread `flush`, so `param_value` and the first block both see it; the `set_params` tool on a not-yet-playing instance (nexus-mcp, nexus-app, nexus-wrap) is no longer a silent no-op.
 - On an active one it still queues on the parameter ring, but **returns an error when the ring is full or was taken** (`take_param_producer`) instead of dropping the change and returning `Ok`.
 
-#### CLAP plugins deactivate, so they can be activated again (`I-102`) · 2026-10-25 21:57 · uvtppupwxzxl
+#### CLAP plugins deactivate, so they can be activated again (`I-102`) · 2026-10-25 21:57 · uvtppupw
 
 - `PluginInstance::deactivate()` on CLAP now really deactivates (clack's `try_deactivate`), once the audio processor from `activate()` has been dropped; with the processor still alive it logs a warning and leaves the plugin active. `activate()` tears down a previous activation itself, so a sample-rate change no longer needs a reload.
 - `render_offline` and `nexus-wrap`'s audio-processor teardown drop the inner processor before deactivating.

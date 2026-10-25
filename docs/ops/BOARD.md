@@ -35,6 +35,7 @@ Headless VST3/CLAP plugin sampling, offline rendering harness (`nexus-mcp`), sta
 
 ## Landed index
 
+- **v0.5.0 Realtime-safe hosting, re-activation & transport** (✅ · 2026-10-25 · `uotyonxw` `v0.5.0`) — VST3 `process()` allocates nothing and no longer calls the edit controller (`I-100`); CLAP `request_callback` is a flag (`I-101`); CLAP deactivates and re-activates (`I-102`); CLAP `set_param` before activation (`I-103`); transport to CLAP and VST3, offline renders at the fugue's tempo (`I-104`); `crates/nexus-test-plugin` + `tests/realtime.rs`.
 - **v0.4.0 Render parity, VST3 MIDI mapping & a pinned shared crate** (✅ · 2026-10-25 · `wqnvkzop` `v0.4.0`) — first push since `v0.1.0`; `v0.2.0`/`v0.3.0` tags backfilled at their release commits; fresh clones build again (`I-98`).
 - **Multi-channel CC support verified against shared crate** (`I-53` ✅ · 2026-09-06) — verified `render_offline` with `CompositeFugue`'s new `CcTarget` support; CC lanes specified as `"channel:controller"` (e.g. `"2:74"`) deliver MIDI CC messages on the designated channel.
 - **VST3 MIDI controller mapping and per-note expression** (`I-97` ✅ · 2026-09-06 · `tppoyvxx`) — VST3 `IMidiMapping` integration mapping MIDI CCs, pitch bend, and channel pressure to parameter changes, raw polyphonic key pressure (`0xA0`) and note expressions mapped to `PolyPressureEvent` and `NoteExpressionValueEvent`, and `EventSupport` updated for VST3.
