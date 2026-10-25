@@ -7,13 +7,13 @@
 //! counts. The façade's single input/output map to the **main** bus (index 0).
 //! Buffers are allocated once at activation and reused every block.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::ptr;
 use std::sync::Arc;
 
 use vst3_sdk::Steinberg::Vst::{
     AudioBusBuffers, AudioBusBuffers__type0, ControllerNumbers_, Event, Event_, IAudioProcessor,
-    IAudioProcessorTrait, IEditController, IEditControllerTrait, IEventList, IParameterChanges,
+    IAudioProcessorTrait, IEventList, IParameterChanges,
     NoteExpressionTypeID, NoteExpressionTypeIDs_, NoteExpressionValueEvent, NoteOffEvent,
     NoteOnEvent, PolyPressureEvent, ProcessData, ProcessModes_, SymbolicSampleSizes_,
 };
@@ -26,7 +26,8 @@ use crate::process::{
 };
 use crate::vst3::event_list::HostEventList;
 use crate::vst3::module::LoadedModule;
-use crate::vst3::param_changes::{HostParameterChanges, ParamPoint};
+use crate::vst3::param_changes::HostParameterChanges;
+use crate::vst3::params::Normalizer;
 
 /// Mapping from `(channel, ctrl_number)` to VST3 `ParamID`.
 pub type MidiControllerMap = HashMap<(i16, i16), u32>;
@@ -77,7 +78,8 @@ pub struct Vst3AudioProcessor {
     vst_events: Vec<Event>,
     param_consumer: rtrb::Consumer<ParamChange>,
     param_changes: ComWrapper<HostParameterChanges>,
-    controller: Option<ComPtr<IEditController>>,
+    /// Plain → normalised, sampled on the main thread (`I-100`).
+    normalizer: Normalizer,
     midi_map: MidiControllerMap,
     started: bool,
 }
@@ -97,7 +99,7 @@ impl Vst3AudioProcessor {
         output_bus_channels: &[usize],
         max_frames: usize,
         param_consumer: rtrb::Consumer<ParamChange>,
-        controller: Option<ComPtr<IEditController>>,
+        normalizer: Normalizer,
         midi_map: MidiControllerMap,
     ) -> Self {
         let in_buses = input_bus_channels.iter().map(|&c| BusBuffers::new(c, max_frames)).collect();
@@ -114,12 +116,30 @@ impl Vst3AudioProcessor {
             event_list: HostEventList::new(64),
             vst_events: Vec::with_capacity(64),
             param_consumer,
-            param_changes: HostParameterChanges::new(16),
-            controller,
+            param_changes: HostParameterChanges::new(),
+            normalizer,
             midi_map,
             started: false,
         }
     }
+}
+
+/// A MIDI message the plugin's `IMidiMapping` routes to a parameter: CC,
+/// pitch bend or channel pressure, as `(param id, normalised value)`. A channel
+/// without its own mapping falls back to channel 0's.
+fn midi_to_param(midi_map: &MidiControllerMap, data: &[u8; 3]) -> Option<(u32, f64)> {
+    let channel = (data[0] & 0x0F) as i16;
+    let (ctrl, norm) = match data[0] & 0xF0 {
+        0xB0 => (data[1] as i16, data[2] as f64 / 127.0),
+        0xE0 => {
+            let raw = (data[1] as u32) | ((data[2] as u32) << 7);
+            (ControllerNumbers_::kPitchBend as i16, raw as f64 / 16383.0)
+        }
+        0xD0 => (ControllerNumbers_::kAfterTouch as i16, data[1] as f64 / 127.0),
+        _ => return None,
+    };
+    let id = midi_map.get(&(channel, ctrl)).or_else(|| midi_map.get(&(0, ctrl)))?;
+    Some((*id, norm))
 }
 
 /// Translate one façade event into a VST3 event, if it maps to a note, poly pressure,
@@ -258,86 +278,33 @@ impl AudioProcessor for Vst3AudioProcessor {
             vst_events,
             param_consumer,
             param_changes,
-            controller,
+            normalizer,
             midi_map,
             ..
         } = self;
         let frames = block.frames.min(*max_frames);
 
-        // --- parameter changes ---
-        let mut param_map: BTreeMap<u32, Vec<ParamPoint>> = BTreeMap::new();
-
+        // --- parameter changes: preallocated queues, no controller call ---
+        param_changes.begin();
+        let last = frames.saturating_sub(1) as i32;
         while let Ok(change) = param_consumer.pop() {
-            let offset = (change.offset_frames as i32).min(frames.saturating_sub(1) as i32);
-            let norm = controller.as_ref().map_or(change.value, |c| unsafe {
-                c.plainParamToNormalized(change.id, change.value)
-            });
-            param_map.entry(change.id).or_default().push(ParamPoint {
-                sample_offset: offset,
-                value: norm,
-            });
+            let offset = (change.offset_frames as i32).min(last);
+            param_changes.push(change.id, offset, normalizer.normalize(change.id, change.value));
         }
-
         for timed in block.events.iter() {
+            let offset = (timed.time as i32).min(last);
             match &timed.event {
                 FacadeEvent::ParamValue { param_id, value, .. } => {
-                    let offset = (timed.time as i32).min(frames.saturating_sub(1) as i32);
-                    let norm = controller.as_ref().map_or(*value, |c| unsafe {
-                        c.plainParamToNormalized(*param_id, *value)
-                    });
-                    param_map.entry(*param_id).or_default().push(ParamPoint {
-                        sample_offset: offset,
-                        value: norm,
-                    });
+                    param_changes.push(*param_id, offset, normalizer.normalize(*param_id, *value));
                 }
                 FacadeEvent::Midi { data, .. } => {
-                    let status = data[0] & 0xF0;
-                    let channel = (data[0] & 0x0F) as i16;
-                    let offset = (timed.time as i32).min(frames.saturating_sub(1) as i32);
-                    match status {
-                        0xB0 => {
-                            // Control Change: 0..=127 -> normalized 0.0..=1.0
-                            let cc = data[1] as i16;
-                            let norm = (data[2] as f64) / 127.0;
-                            if let Some(&param_id) = midi_map.get(&(channel, cc)).or_else(|| midi_map.get(&(0, cc))) {
-                                param_map.entry(param_id).or_default().push(ParamPoint {
-                                    sample_offset: offset,
-                                    value: norm,
-                                });
-                            }
-                        }
-                        0xE0 => {
-                            // Pitch Bend: 14-bit unsigned 0..=16383 -> normalized 0.0..=1.0
-                            let raw_14bit = (data[1] as u32) | ((data[2] as u32) << 7);
-                            let norm = raw_14bit as f64 / 16383.0;
-                            let ctrl = ControllerNumbers_::kPitchBend as i16;
-                            if let Some(&param_id) = midi_map.get(&(channel, ctrl)).or_else(|| midi_map.get(&(0, ctrl))) {
-                                param_map.entry(param_id).or_default().push(ParamPoint {
-                                    sample_offset: offset,
-                                    value: norm,
-                                });
-                            }
-                        }
-                        0xD0 => {
-                            // Channel Pressure / Aftertouch: 0..=127 -> normalized 0.0..=1.0
-                            let norm = (data[1] as f64) / 127.0;
-                            let ctrl = ControllerNumbers_::kAfterTouch as i16;
-                            if let Some(&param_id) = midi_map.get(&(channel, ctrl)).or_else(|| midi_map.get(&(0, ctrl))) {
-                                param_map.entry(param_id).or_default().push(ParamPoint {
-                                    sample_offset: offset,
-                                    value: norm,
-                                });
-                            }
-                        }
-                        _ => {}
+                    if let Some((param_id, norm)) = midi_to_param(midi_map, data) {
+                        param_changes.push(param_id, offset, norm);
                     }
                 }
                 _ => {}
             }
         }
-
-        let changes_vec: Vec<_> = param_map.into_iter().collect();
-        param_changes.set_changes(&changes_vec);
 
         // --- events ---
         vst_events.clear();

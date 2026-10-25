@@ -174,7 +174,13 @@ impl PluginInstance for Vst3PluginInstance {
 
         let (producer, consumer) = rtrb::RingBuffer::new(1024);
         self.param_producer = Some(producer);
-        let ctrl_clone = self.controller.clone();
+        // Sampled here, on the owning thread: the audio thread never calls the
+        // controller (`I-100`).
+        let normalizer = self
+            .controller
+            .as_ref()
+            .map(crate::vst3::params::Normalizer::from_controller)
+            .unwrap_or_default();
         let midi_map = self.midi_map.clone();
 
         // A fresh (ref-counted) IAudioProcessor handle for the audio thread.
@@ -189,7 +195,7 @@ impl PluginInstance for Vst3PluginInstance {
             &out_channels,
             config.max_block_frames,
             consumer,
-            ctrl_clone,
+            normalizer,
             midi_map,
         )))
     }

@@ -14,6 +14,12 @@
 
 ## Unreleased
 
+#### VST3 processing allocates nothing and never touches the edit controller (`I-100`) · 2026-10-25 22:00 · kmppzvypovlk
+
+- `Vst3AudioProcessor::process` no longer builds a `BTreeMap` of `Vec`s per block: `HostParameterChanges` preallocates 256 parameter queues of 32 points, and a block only resets and fills them. Overflow is dropped and counted (`dropped()`), keeping each parameter's newest value.
+- Plain → normalised conversion no longer calls `IEditController::plainParamToNormalized` on the audio thread. `activate()` samples every parameter's curve from the controller into a `vst3::params::Normalizer`: exact for linear and stepped parameters (and the identity JUCE plugins use), piecewise-linear over 33 samples for any other curve. The processor no longer holds the controller at all.
+- Measured with `NEXUS_REAL_PLUGIN_TEST=1`: TAL-Filter-2 and Surge XT Effects VST3, 2 000 blocks with a parameter change each, **0 allocations** (6 000 before).
+
 #### CLAP `set_param` works before activation (`I-103`) · 2026-10-25 21:57 · xlrmsxxlulno
 
 - On an inactive CLAP plugin `set_param` now applies the value through the `params` extension's main-thread `flush`, so `param_value` and the first block both see it; the `set_params` tool on a not-yet-playing instance (nexus-mcp, nexus-app, nexus-wrap) is no longer a silent no-op.

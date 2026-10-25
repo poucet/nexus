@@ -13,6 +13,8 @@ mod common;
 use common::{Blocks, FRAMES, allocations, config, load, param, real_plugins, test_plugin};
 use nexus_host::{ParamChange, PluginFormat};
 use nexus_host::process::Event;
+use nexus_host::vst3::param_changes::HostParameterChanges;
+use nexus_host::vst3::params::Normalizer;
 
 #[global_allocator]
 static ALLOC: common::Counting = common::Counting;
@@ -90,6 +92,28 @@ fn set_param_before_activation_is_kept() {
     processor.start_processing().unwrap();
     assert_eq!(Blocks::new().run(processor.as_mut()), 0.25, "and the audio is scaled by it");
     processor.stop_processing();
+}
+
+#[test]
+fn vst3_parameter_queues_fill_without_allocating() {
+    // The VST3 processor's per-block parameter path, without a VST3 plugin:
+    // normalise each change (no controller call) and queue it (no allocation).
+    let changes = HostParameterChanges::new();
+    let normalizer = Normalizer::sample((0..12).map(|id| (id, 0)), |id, x| {
+        if id % 2 == 0 { x } else { 20.0 * 1000f64.powf(x) }
+    });
+    let allocated = allocations(|| {
+        for block in 0..BLOCKS {
+            changes.begin();
+            for i in 0..40u32 {
+                let id = (i + block as u32) % 12;
+                changes.push(id, (i * 6) as i32, normalizer.normalize(id, 440.0));
+            }
+        }
+    });
+    assert_eq!(allocated, 0, "queueing VST3 parameter changes allocated {allocated} times");
+    assert_eq!(changes.active_count(), 12);
+    assert_eq!(changes.dropped(), 0);
 }
 
 /// `NEXUS_REAL_PLUGIN_TEST=1`: the same contract on installed free plugins.
