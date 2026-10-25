@@ -122,7 +122,11 @@ cargo run --bin nexus-app
 ```sh
 cargo build   # build everything
 cargo test    # run tests
+NEXUS_REAL_PLUGIN_TEST=1 cargo test -p nexus-host --test realtime   # also against installed TAL-Filter-2 / Surge XT Effects
 ```
+
+The default tests need no installed plugin: `nexus-host`'s realtime tests build
+and load `crates/nexus-test-plugin`, a small CLAP gain.
 
 ### Bundling plugin crates
 
