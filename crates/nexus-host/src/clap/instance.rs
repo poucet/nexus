@@ -108,6 +108,7 @@ impl HostPluginInstance for ClapPluginInstance {
             io,
             config.max_block_frames,
             consumer,
+            config.sample_rate,
         )))
     }
 

@@ -15,14 +15,15 @@ use vst3_sdk::Steinberg::Vst::{
     AudioBusBuffers, AudioBusBuffers__type0, ControllerNumbers_, Event, Event_, IAudioProcessor,
     IAudioProcessorTrait, IEventList, IParameterChanges,
     NoteExpressionTypeID, NoteExpressionTypeIDs_, NoteExpressionValueEvent, NoteOffEvent,
-    NoteOnEvent, PolyPressureEvent, ProcessData, ProcessModes_, SymbolicSampleSizes_,
+    NoteOnEvent, PolyPressureEvent, ProcessContext, ProcessContext_, ProcessData, ProcessModes_,
+    SymbolicSampleSizes_,
 };
 use vst3_sdk::{ComPtr, ComWrapper};
 
 use crate::host::{AudioProcessor, HostError, ParamChange};
 use crate::process::{
     Event as FacadeEvent, NoteEventKind, NoteExpression as FacadeNoteExpression, ProcessBlock,
-    TimedEvent,
+    TimedEvent, Transport, TransportClock,
 };
 use crate::vst3::event_list::HostEventList;
 use crate::vst3::module::LoadedModule;
@@ -81,6 +82,12 @@ pub struct Vst3AudioProcessor {
     /// Plain → normalised, sampled on the main thread (`I-100`).
     normalizer: Normalizer,
     midi_map: MidiControllerMap,
+    transport: TransportClock,
+    /// Handed to the plugin each block while there is a transport.
+    context: ProcessContext,
+    sample_rate: f64,
+    /// Samples processed since activation (`continousTimeSamples`).
+    steady: i64,
     started: bool,
 }
 
@@ -101,6 +108,7 @@ impl Vst3AudioProcessor {
         param_consumer: rtrb::Consumer<ParamChange>,
         normalizer: Normalizer,
         midi_map: MidiControllerMap,
+        sample_rate: f64,
     ) -> Self {
         let in_buses = input_bus_channels.iter().map(|&c| BusBuffers::new(c, max_frames)).collect();
         let out_buses =
@@ -119,9 +127,41 @@ impl Vst3AudioProcessor {
             param_changes: HostParameterChanges::new(),
             normalizer,
             midi_map,
+            transport: TransportClock::new(sample_rate),
+            // SAFETY: a plain-data C struct; all-zero is a valid empty context.
+            context: unsafe { std::mem::zeroed() },
+            sample_rate,
+            steady: 0,
             started: false,
         }
     }
+}
+
+/// Fill `context` from the façade transport. `steady` is the sample count since
+/// activation.
+pub fn fill_context(context: &mut ProcessContext, t: &Transport, sample_rate: f64, steady: i64) {
+    use ProcessContext_::StatesAndFlags_::*;
+    let mut state = kTempoValid
+        | kTimeSigValid
+        | kProjectTimeMusicValid
+        | kBarPositionValid
+        | kContTimeValid;
+    if t.playing {
+        state |= kPlaying;
+    }
+    if t.loop_active {
+        state |= kCycleActive;
+    }
+    let (_, bar_start) = t.bar();
+    context.state = state;
+    context.sampleRate = sample_rate;
+    context.projectTimeSamples = (t.song_pos_seconds * sample_rate).round() as i64;
+    context.continousTimeSamples = steady;
+    context.projectTimeMusic = t.song_pos_beats;
+    context.barPositionMusic = bar_start;
+    context.tempo = t.tempo_bpm;
+    context.timeSigNumerator = i32::from(t.time_sig_numerator);
+    context.timeSigDenominator = i32::from(t.time_sig_denominator);
 }
 
 /// A MIDI message the plugin's `IMidiMapping` routes to a parameter: CC,
@@ -280,6 +320,10 @@ impl AudioProcessor for Vst3AudioProcessor {
             param_changes,
             normalizer,
             midi_map,
+            transport,
+            context,
+            sample_rate,
+            steady,
             ..
         } = self;
         let frames = block.frames.min(*max_frames);
@@ -349,6 +393,15 @@ impl AudioProcessor for Vst3AudioProcessor {
             ptr::null_mut()
         };
 
+        let context_ptr = match transport.block(block.events, frames) {
+            Some(t) => {
+                fill_context(context, &t, *sample_rate, *steady);
+                context as *mut ProcessContext
+            }
+            None => ptr::null_mut(),
+        };
+        *steady += frames as i64;
+
         let mut data = ProcessData {
             processMode: ProcessModes_::kRealtime as i32,
             symbolicSampleSize: SymbolicSampleSizes_::kSample32 as i32,
@@ -361,7 +414,7 @@ impl AudioProcessor for Vst3AudioProcessor {
             outputParameterChanges: ptr::null_mut(),
             inputEvents: events_ptr,
             outputEvents: ptr::null_mut(),
-            processContext: ptr::null_mut(),
+            processContext: context_ptr,
         };
 
         // SAFETY: all pointers above are valid for the duration of the call.
@@ -386,6 +439,36 @@ mod tests {
     use super::*;
     use crate::process::NoteEventKind;
     use vst3_sdk::Steinberg::Vst::Event_::EventTypes_;
+
+    #[test]
+    fn the_transport_becomes_a_process_context() {
+        let t = Transport {
+            playing: true,
+            loop_active: false,
+            tempo_bpm: 90.0,
+            song_pos_beats: 9.5,
+            song_pos_seconds: 9.5 * 60.0 / 90.0,
+            time_sig_numerator: 4,
+            time_sig_denominator: 4,
+        };
+        let mut context: ProcessContext = unsafe { std::mem::zeroed() };
+        fill_context(&mut context, &t, 48_000.0, 1_234);
+        use ProcessContext_::StatesAndFlags_::*;
+        let state = context.state as i64;
+        for flag in [kPlaying, kTempoValid, kTimeSigValid, kProjectTimeMusicValid, kBarPositionValid] {
+            assert_ne!(state & flag as i64, 0, "flag {flag} set");
+        }
+        assert_eq!(state & kCycleActive as i64, 0);
+        assert_eq!(context.tempo, 90.0);
+        assert_eq!(context.projectTimeMusic, 9.5);
+        assert_eq!(context.barPositionMusic, 8.0);
+        assert_eq!(context.projectTimeSamples, 304_000);
+        assert_eq!(context.continousTimeSamples, 1_234);
+        assert_eq!((context.timeSigNumerator, context.timeSigDenominator), (4, 4));
+
+        fill_context(&mut context, &Transport { playing: false, ..t }, 48_000.0, 0);
+        assert_eq!(context.state as i64 & kPlaying as i64, 0);
+    }
 
     #[test]
     fn test_to_vst_event_notes() {

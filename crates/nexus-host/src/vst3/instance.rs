@@ -197,6 +197,7 @@ impl PluginInstance for Vst3PluginInstance {
             consumer,
             normalizer,
             midi_map,
+            config.sample_rate,
         )))
     }
 

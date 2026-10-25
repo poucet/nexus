@@ -115,18 +115,73 @@ pub enum NoteExpression {
 }
 
 /// Transport / playhead state for the block (the audible subset of CLAP's
-/// `clap_event_transport`).
+/// `clap_event_transport`). Send one as [`Event::Transport`] whenever it
+/// changes — a start, a stop, a tempo change, a jump; between events the
+/// backends advance the position with the audio ([`TransportClock`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transport {
     pub playing: bool,
     pub loop_active: bool,
     pub tempo_bpm: f64,
-    /// Song position, in beats.
+    /// Song position, in beats (quarter notes, as in CLAP and VST3).
     pub song_pos_beats: f64,
     /// Song position, in seconds.
     pub song_pos_seconds: f64,
     pub time_sig_numerator: u16,
     pub time_sig_denominator: u16,
+}
+
+impl Transport {
+    /// The current bar: `(bar number from 0, its start in beats)`. A bar is
+    /// `numerator · 4 / denominator` quarter notes (4/4 if the signature is
+    /// unset).
+    pub fn bar(&self) -> (i32, f64) {
+        let (num, den) = match (self.time_sig_numerator, self.time_sig_denominator) {
+            (0, _) | (_, 0) => (4, 4),
+            sig => sig,
+        };
+        let bar_len = f64::from(num) * 4.0 / f64::from(den);
+        let bar = (self.song_pos_beats / bar_len).floor();
+        (bar as i32, bar * bar_len)
+    }
+}
+
+/// The transport each block starts at, for a backend to hand its plugin.
+///
+/// The newest [`Event::Transport`] in a block replaces the clock's state; a
+/// block without one continues from the last, moved on by the audio since
+/// while playing. Before the first event there is no transport (a
+/// free-running host). Realtime-safe.
+#[derive(Debug, Clone, Copy)]
+pub struct TransportClock {
+    sample_rate: f64,
+    current: Option<Transport>,
+}
+
+impl TransportClock {
+    pub fn new(sample_rate: f64) -> Self {
+        Self { sample_rate, current: None }
+    }
+
+    /// The transport at the first sample of a block of `frames` frames
+    /// carrying `events`; the clock then stands at the block's end.
+    pub fn block(&mut self, events: &EventBuffer, frames: usize) -> Option<Transport> {
+        let newest = events.iter().rev().find_map(|e| match e.event {
+            Event::Transport(t) => Some(t),
+            _ => None,
+        });
+        if newest.is_some() {
+            self.current = newest;
+        }
+        let now = self.current?;
+        if now.playing && self.sample_rate > 0.0 {
+            let seconds = frames as f64 / self.sample_rate;
+            let next = self.current.as_mut().expect("just read");
+            next.song_pos_seconds += seconds;
+            next.song_pos_beats += seconds * now.tempo_bpm / 60.0;
+        }
+        Some(now)
+    }
 }
 
 /// A format-agnostic plugin event, modelled faithfully on CLAP's event union so
@@ -290,6 +345,47 @@ mod tests {
         let buf = AudioBuffer::empty();
         assert_eq!(buf.channel_count(), 0);
         assert!(buf.channel(0).is_none());
+    }
+
+    fn transport(playing: bool, beats: f64) -> Transport {
+        Transport {
+            playing,
+            loop_active: false,
+            tempo_bpm: 120.0,
+            song_pos_beats: beats,
+            song_pos_seconds: beats / 2.0,
+            time_sig_numerator: 3,
+            time_sig_denominator: 4,
+        }
+    }
+
+    #[test]
+    fn the_transport_clock_follows_events_and_advances_while_playing() {
+        let mut clock = TransportClock::new(48_000.0);
+        let mut events = EventBuffer::with_capacity(4);
+        assert_eq!(clock.block(&events, 24_000), None, "free-running until told");
+
+        events.push(0, Event::Transport(transport(true, 4.0)));
+        assert_eq!(clock.block(&events, 24_000).unwrap().song_pos_beats, 4.0);
+        events.clear();
+        // Half a second at 120 BPM is one beat.
+        let next = clock.block(&events, 24_000).unwrap();
+        assert_eq!((next.song_pos_beats, next.song_pos_seconds), (5.0, 2.5));
+
+        events.push(0, Event::Transport(transport(false, 9.0)));
+        assert_eq!(clock.block(&events, 24_000).unwrap().song_pos_beats, 9.0);
+        events.clear();
+        assert_eq!(clock.block(&events, 24_000).unwrap().song_pos_beats, 9.0, "stopped: holds");
+    }
+
+    #[test]
+    fn a_bar_is_numerator_quarters_scaled_by_the_denominator() {
+        assert_eq!(transport(true, 7.5).bar(), (2, 6.0)); // 3/4: bars of 3 beats
+        let mut six_eight = transport(true, 7.5);
+        (six_eight.time_sig_numerator, six_eight.time_sig_denominator) = (6, 8);
+        assert_eq!(six_eight.bar(), (2, 6.0)); // 6/8: bars of 3 quarters
+        six_eight.time_sig_denominator = 0;
+        assert_eq!(six_eight.bar(), (1, 4.0)); // unset: 4/4
     }
 
     #[test]

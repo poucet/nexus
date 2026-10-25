@@ -14,6 +14,13 @@
 
 ## Unreleased
 
+#### The transport reaches plugins: tempo, play state, position (`I-104`) · 2026-10-25 22:02 · kktynxztplzq
+
+- **New `process::TransportClock`**: the newest `Event::Transport` in a block sets the transport; blocks without one continue from it, advanced by the audio while playing. Send a `Transport` when it changes (start, stop, tempo, jump), not every block. Before the first one there is none (a free-running host), as before.
+- **CLAP**: `process` gets a `clap_event_transport` every block (tempo, beats and seconds timelines, time signature, bar start and number, playing / loop flags). **VST3**: `ProcessContext` is filled (`kPlaying`, tempo, time signature, project time in samples and quarter notes, bar position, continuous time) instead of null.
+- `Transport::bar()` gives the bar number and start; `song_pos_beats` is documented as quarter notes.
+- **`render_offline` now plays from the top at the fugue's tempo** (4/4): the first block carries a `Transport`, so tempo-synced plugins render in time. Plugins that ignored the missing transport render as before.
+
 #### VST3 processing allocates nothing and never touches the edit controller (`I-100`) · 2026-10-25 22:00 · kmppzvypovlk
 
 - `Vst3AudioProcessor::process` no longer builds a `BTreeMap` of `Vec`s per block: `HostParameterChanges` preallocates 256 parameter queues of 32 points, and a block only resets and fills them. Overflow is dropped and counted (`dropped()`), keeping each parameter's newest value.

@@ -6,13 +6,14 @@
 //!   `I-101` CLAP `request_callback`);
 //! - a deactivated plugin activates again (`I-102`);
 //! - `set_param` before activation is not lost (`I-103`);
-//! - the transport reaches the plugin and advances between events (`I-104`).
+//! - the transport reaches the plugin and advances between events (`I-104`),
+//!   also without allocating.
 
 mod common;
 
 use common::{Blocks, FRAMES, allocations, config, load, param, real_plugins, test_plugin};
 use nexus_host::{ParamChange, PluginFormat};
-use nexus_host::process::Event;
+use nexus_host::process::{Event, Transport};
 use nexus_host::vst3::param_changes::HostParameterChanges;
 use nexus_host::vst3::params::Normalizer;
 
@@ -21,6 +22,18 @@ static ALLOC: common::Counting = common::Counting;
 
 const WARMUP: usize = 50;
 const BLOCKS: usize = 2_000;
+
+fn playing_at(beats: f64) -> Transport {
+    Transport {
+        playing: true,
+        loop_active: false,
+        tempo_bpm: 128.0,
+        song_pos_beats: beats,
+        song_pos_seconds: beats * 60.0 / 128.0,
+        time_sig_numerator: 4,
+        time_sig_denominator: 4,
+    }
+}
 
 #[test]
 fn parameter_changes_reach_the_plugin_without_allocating() {
@@ -37,6 +50,9 @@ fn parameter_changes_reach_the_plugin_without_allocating() {
     let allocated = allocations(|| {
         for i in 0..BLOCKS {
             let value = if i % 2 == 0 { 0.25 } else { 0.5 };
+            if i % 16 == 0 {
+                blocks.events.push(0, Event::Transport(playing_at(i as f64)));
+            }
             // Both doors a caller has: the ring and a block event.
             ring.push(ParamChange { id: param::VOLUME, value, offset_frames: 0 }).unwrap();
             blocks.events.push(
@@ -95,6 +111,39 @@ fn set_param_before_activation_is_kept() {
 }
 
 #[test]
+fn the_transport_reaches_the_plugin_and_advances_between_events() {
+    let mut instance = load(&test_plugin());
+    let rate = 48_000.0;
+    let mut processor = instance.activate(config(rate)).unwrap();
+    processor.start_processing().unwrap();
+    let mut blocks = Blocks::new();
+
+    blocks.run(processor.as_mut());
+    assert_eq!(instance.param_value(param::PLAYING), Some(-1.0), "no transport until one is sent");
+
+    let tempo = 128.0;
+    blocks.events.push(
+        0,
+Event::Transport(playing_at(8.0)),
+    );
+    blocks.run(processor.as_mut());
+    assert_eq!(instance.param_value(param::TEMPO), Some(tempo));
+    assert_eq!(instance.param_value(param::PLAYING), Some(1.0));
+    assert_eq!(instance.param_value(param::BEATS), Some(8.0));
+
+    // No event for the next blocks: the position keeps moving with the audio.
+    let more = 10;
+    for _ in 0..more {
+        blocks.run(processor.as_mut());
+    }
+    let beats = 8.0 + (more * FRAMES) as f64 / rate * tempo / 60.0;
+    let seen = instance.param_value(param::BEATS).unwrap();
+    // CLAP carries beats as 31-bit fixed point.
+    assert!((seen - beats).abs() < 1e-6, "beats {seen}, expected {beats}");
+    processor.stop_processing();
+}
+
+#[test]
 fn vst3_parameter_queues_fill_without_allocating() {
     // The VST3 processor's per-block parameter path, without a VST3 plugin:
     // normalise each change (no controller call) and queue it (no allocation).
@@ -142,6 +191,9 @@ fn installed_plugins_take_parameter_changes_without_allocating() {
                 for i in 0..BLOCKS {
                     let value = lo + (hi - lo) * ((i % 7) as f64 / 6.0);
                     let _ = ring.push(ParamChange { id: target.id, value, offset_frames: 0 });
+                    if i % 16 == 0 {
+                        blocks.events.push(0, Event::Transport(playing_at(i as f64)));
+                    }
                     blocks.run(processor.as_mut());
                 }
             });

@@ -8,15 +8,20 @@
 use clack_host::events::Match;
 use clack_host::events::event_types::{
     MidiEvent, NoteChokeEvent, NoteExpressionEvent, NoteExpressionType, NoteOffEvent, NoteOnEvent,
-    ParamGestureBeginEvent, ParamGestureEndEvent, ParamModEvent, ParamValueEvent,
+    ParamGestureBeginEvent, ParamGestureEndEvent, ParamModEvent, ParamValueEvent, TransportEvent,
+    TransportFlags,
 };
+use clack_host::events::{EventFlags, EventHeader};
+use clack_host::utils::BeatTime;
 use clack_host::prelude::*;
 use clack_host::utils::Cookie;
 
 use crate::clap::host::NexusHost;
 use crate::clap::ports::IoLayout;
 use crate::host::{AudioProcessor, HostError, ParamChange};
-use crate::process::{Event, NoteEventKind, NoteExpression, ProcessBlock};
+use crate::process::{
+    Event, NoteEventKind, NoteExpression, ProcessBlock, Transport, TransportClock,
+};
 
 /// The façade's expression dimensions map one-to-one onto CLAP's, which is what
 /// [`crate::process::Event`] was modelled on. Units are CLAP's and are the
@@ -35,6 +40,34 @@ fn expression_type(expression: NoteExpression) -> NoteExpressionType {
     }
 }
 
+/// The façade transport as CLAP's `clap_event_transport` (no loop range: the
+/// façade has none).
+fn transport_event(t: &Transport) -> TransportEvent {
+    let mut flags = TransportFlags::HAS_TEMPO
+        | TransportFlags::HAS_BEATS_TIMELINE
+        | TransportFlags::HAS_SECONDS_TIMELINE
+        | TransportFlags::HAS_TIME_SIGNATURE;
+    flags.set(TransportFlags::IS_PLAYING, t.playing);
+    flags.set(TransportFlags::IS_LOOP_ACTIVE, t.loop_active);
+    let (bar_number, bar_start) = t.bar();
+    TransportEvent {
+        header: EventHeader::new_core(0, EventFlags::empty()),
+        flags,
+        song_pos_beats: BeatTime::from_float(t.song_pos_beats),
+        song_pos_seconds: BeatTime::from_float(t.song_pos_seconds),
+        tempo: t.tempo_bpm,
+        tempo_inc: 0.0,
+        loop_start_beats: BeatTime::from_int(0),
+        loop_end_beats: BeatTime::from_int(0),
+        loop_start_seconds: BeatTime::from_int(0),
+        loop_end_seconds: BeatTime::from_int(0),
+        bar_start: BeatTime::from_float(bar_start),
+        bar_number,
+        time_signature_numerator: t.time_sig_numerator,
+        time_signature_denominator: t.time_sig_denominator,
+    }
+}
+
 /// A CLAP plugin's audio-thread half. `Send`, so the engine can move it onto
 /// the realtime callback.
 pub struct ClapAudioProcessor {
@@ -50,6 +83,7 @@ pub struct ClapAudioProcessor {
     events: EventBuffer,
     steady: u64,
     param_consumer: rtrb::Consumer<ParamChange>,
+    transport: TransportClock,
 }
 
 impl ClapAudioProcessor {
@@ -58,6 +92,7 @@ impl ClapAudioProcessor {
         io: IoLayout,
         max_frames: usize,
         param_consumer: rtrb::Consumer<ParamChange>,
+        sample_rate: f64,
     ) -> Self {
         let input_backing = io
             .input_ports
@@ -88,6 +123,7 @@ impl ClapAudioProcessor {
             events: EventBuffer::with_capacity(64),
             steady: 0,
             param_consumer,
+            transport: TransportClock::new(sample_rate),
         }
     }
 }
@@ -127,6 +163,7 @@ impl AudioProcessor for ClapAudioProcessor {
             events,
             steady,
             param_consumer,
+            transport,
         } = self;
         let max_frames = *max_frames;
         let frames = block.frames.min(max_frames);
@@ -263,6 +300,7 @@ impl AudioProcessor for ClapAudioProcessor {
             }
         }));
 
+        let transport = transport.block(block.events, frames).map(|t| transport_event(&t));
         let input_events = events.as_input();
         if let Ok(started) = processor.as_started_mut() {
             let _ = started.process(
@@ -271,7 +309,7 @@ impl AudioProcessor for ClapAudioProcessor {
                 &input_events,
                 &mut OutputEvents::void(),
                 Some(*steady),
-                None,
+                transport.as_ref(),
             );
         }
         drop(outs);

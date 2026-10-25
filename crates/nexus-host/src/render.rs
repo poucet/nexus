@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::fugue::{CompiledFugue, FugueEvent};
 use crate::host::{AudioConfig, HostError, ParamChange, PluginInstance};
 use crate::process::{
-    AudioBuffer, Event, EventBuffer, NoteEventKind, NoteExpression, ProcessBlock,
+    AudioBuffer, Event, EventBuffer, NoteEventKind, NoteExpression, ProcessBlock, Transport,
 };
 use simply_fugue::types::{InterpolationMode, LoopMode};
 
@@ -648,6 +648,22 @@ pub fn render_offline(
         // and this buffer was not: every note went in ahead of every parameter
         // change, whatever their frames said.
         block_events.sort_by_key(|(offset, is_note_on, _)| (*offset, *is_note_on));
+        if current_frame == 0 {
+            // Playing from the top at the fugue's tempo, so tempo-synced
+            // plugins follow it; the backends advance it from here (`I-104`).
+            input_events.push(
+                0,
+                Event::Transport(Transport {
+                    playing: true,
+                    loop_active: false,
+                    tempo_bpm: tempo,
+                    song_pos_beats: 0.0,
+                    song_pos_seconds: 0.0,
+                    time_sig_numerator: 4,
+                    time_sig_denominator: 4,
+                }),
+            );
+        }
         for (offset, _, event) in block_events.drain(..) {
             input_events.push(offset, event);
         }
@@ -1504,5 +1520,15 @@ mod tests {
             param_events_in_block.is_empty(),
             "ParamValue must not be pushed to block_events when param_producer is present (I-94), but found {param_events_in_block:?}"
         );
+
+        // The same render also tells the plugin the tempo, once, first (I-104).
+        let transports: Vec<&Event> =
+            locked.iter().filter(|e| matches!(e, Event::Transport(_))).collect();
+        assert_eq!(transports.len(), 1, "one transport event: {transports:?}");
+        let Some(Event::Transport(t)) = locked.first() else {
+            panic!("the transport is the first event: {:?}", locked.first());
+        };
+        assert!(t.playing);
+        assert_eq!((t.tempo_bpm, t.song_pos_beats), (120.0, 0.0));
     }
 }
