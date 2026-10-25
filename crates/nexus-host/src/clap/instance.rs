@@ -194,12 +194,12 @@ impl HostPluginInstance for ClapPluginInstance {
     fn pump(&mut self) {
         // Service whatever the plugin asked the main thread to do (drives the
         // editor: callbacks, resize, close).
-        let mut run_callback = false;
+        let run_callback =
+            self.instance.access_shared_handler(NexusHostShared::take_callback_request);
         #[allow(unused_mut)]
         let mut closed = false;
         while let Ok(message) = self.messages.try_recv() {
             match message {
-                MainThreadMessage::RunOnMainThread => run_callback = true,
                 // The window tracks the plugin view via `fit()` each frame, so
                 // resize requests don't need explicit handling (and acting on
                 // them caused a feedback loop).

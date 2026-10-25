@@ -1,0 +1,19 @@
+[package]
+name = "nexus-test-plugin"
+description = "A tiny CLAP gain that reports what the host gave it; nexus-host's tests load it by path."
+version.workspace = true
+edition.workspace = true
+# Built from clack's `gain` example (plugin/examples/gain at the rev the
+# workspace pins), which is MIT OR Apache-2.0 like clack itself.
+license = "MIT OR Apache-2.0"
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clack-plugin.workspace = true
+clack-extensions.workspace = true

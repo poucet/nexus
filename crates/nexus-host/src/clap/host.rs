@@ -10,11 +10,13 @@ use clack_extensions::gui::{GuiSize, HostGui, HostGuiImpl};
 use clack_extensions::log::{HostLog, HostLogImpl, LogSeverity};
 use clack_host::prelude::*;
 use crossbeam_channel::Sender;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Messages sent to the main thread from any of a plugin's threads.
+/// Messages sent to the main thread by the plugin's editor (`gui` extension).
+///
+/// `request_callback` is not one of them: plugins call it from the audio
+/// thread, so it only sets a flag (see [`NexusHostShared::take_callback_request`]).
 pub enum MainThreadMessage {
-    /// Run the plugin's `on_main_thread` callback.
-    RunOnMainThread,
     /// The plugin asked its editor window to resize to this size.
     GuiResize(GuiSize),
     /// The plugin's editor window was closed.
@@ -48,11 +50,19 @@ impl HostHandlers for NexusHost {
 /// Host data reachable from every plugin thread (must be `Send + Sync`).
 pub struct NexusHostShared {
     sender: Sender<MainThreadMessage>,
+    /// Set by `request_callback` from any thread; cleared by `pump`.
+    callback_requested: AtomicBool,
 }
 
 impl NexusHostShared {
     pub fn new(sender: Sender<MainThreadMessage>) -> Self {
-        Self { sender }
+        Self { sender, callback_requested: AtomicBool::new(false) }
+    }
+
+    /// Whether the plugin asked for `on_main_thread` since the last call;
+    /// clears the request.
+    pub fn take_callback_request(&self) -> bool {
+        self.callback_requested.swap(false, Ordering::AcqRel)
     }
 }
 
@@ -65,9 +75,11 @@ impl<'a> SharedHandler<'a> for NexusHostShared {
         // The engine drives processing; nothing to schedule here yet.
     }
 
+    /// Realtime-safe: JUCE-built plugins call this from `process()` on every
+    /// parameter change, so it must not allocate or block — a flag, not a
+    /// queue. Requests coalesce, as CLAP allows: one `on_main_thread` per pump.
     fn request_callback(&self) {
-        // Best-effort: if the main-thread loop has gone, there's nothing to run.
-        let _ = self.sender.send(MainThreadMessage::RunOnMainThread);
+        self.callback_requested.store(true, Ordering::Release);
     }
 }
 

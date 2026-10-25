@@ -3051,6 +3051,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexus-test-plugin"
+version = "0.4.0"
+dependencies = [
+ "clack-extensions",
+ "clack-plugin",
+]
+
+[[package]]
 name = "nexus-tools"
 version = "0.4.0"
 dependencies = [

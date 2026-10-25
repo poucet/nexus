@@ -14,6 +14,11 @@
 
 ## Unreleased
 
+#### CLAP `request_callback` no longer allocates on the audio thread (`I-101`) · 2026-10-25 22:00 · zmmvqynt
+
+- `request_callback` sets a flag instead of sending on an unbounded channel; `pump()` runs `on_main_thread` once per pump however many requests arrived. JUCE plugins call it from `process()` per parameter change, so this was an allocation every 31 changes on the audio thread.
+- New `crates/nexus-test-plugin` (`nexus.test.gain`, from clack's gain example, MIT OR Apache-2.0): a CLAP gain that calls `request_callback` from `process()` like JUCE does and reports what the host sent through read-only parameters. `nexus-host/tests/realtime.rs` builds it and counts allocations in `process()`; `NEXUS_REAL_PLUGIN_TEST=1` runs the same checks on installed TAL-Filter-2 and Surge XT Effects (CLAP and VST3).
+
 ---
 
 ## v0.4.0 — Render parity, VST3 MIDI mapping & a pinned shared crate
