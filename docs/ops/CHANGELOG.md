@@ -4,7 +4,8 @@
 
 | Dates | Tag | |
 |---|---|---|
-| 2026-09-01 → … | — | **[Unreleased](#unreleased)** — 0.4 state exploration & AI synthesis |
+| 2026-10-25 → … | — | **[Unreleased](#unreleased)** |
+| 2026-09-01 → 10-25 | `v0.4.0` | [Render parity & VST3 MIDI](#v040--render-parity-vst3-midi-mapping--a-pinned-shared-crate) — `render_audio` renders what the fugue says, VST3 `IMidiMapping` and note expressions, `simply-fugue` from music-rs by tag |
 | 2026-09-01 | `v0.3.0` | [Milestone 0.3: Plugin Wrapper & Automation](#v030--in-daw-wrapper-parameter-automation--cross-platform-linux) — `nexus-wrap` CLAP plugin, realtime parameter ring, Linux/Docker support, AI patch reconstruction design |
 | 2026-08-26 → 09-01 | `v0.2.0` | [Milestone 0.2: State Tools & AI Sampler](#v020--state-tools--ai-sampler) — MCP server, driver-free offline rendering, Fugue sequencing, codecs |
 | 2026-06-01 → 08-26 | `v0.1.0` | [Milestone 0.1: Load & Hear](#v010--load--hear) — CLAP/VST3 hosting engine + standalone egui app |
@@ -12,6 +13,12 @@
 ---
 
 ## Unreleased
+
+---
+
+## v0.4.0 — Render parity, VST3 MIDI mapping & a pinned shared crate
+
+**Tagged `v0.4.0` · 2026-10-25 21:55 · wqnvkzop** — the first push since `v0.1.0`. The `v0.2.0` and `v0.3.0` tags this changelog records were never created; they were backfilled the same day at their release commits (`quurmwqx`, `kxmvtllk`).
 
 #### A fresh clone builds again; `simply-fugue` pinned by tag (`I-98`) · 2026-10-25 21:50 · xuskpswy
 

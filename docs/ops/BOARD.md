@@ -9,7 +9,7 @@ Legend: 🚧 in flight · ✅ landed · ⏸ deferred.
 
 ## Milestones
 
-### 0.4 - AI Sampler Harness & State Exploration
+### 0.6 - AI Sampler Harness & State Exploration
 
 Headless VST3/CLAP plugin sampling, offline rendering harness (`nexus-mcp`), state codecs, and DAW wrapper extensions. (Downstream audio analysis & patch reconstruction live in `../sense` and `../flux`.)
 
@@ -35,6 +35,7 @@ Headless VST3/CLAP plugin sampling, offline rendering harness (`nexus-mcp`), sta
 
 ## Landed index
 
+- **v0.4.0 Render parity, VST3 MIDI mapping & a pinned shared crate** (✅ · 2026-10-25 · `wqnvkzop` `v0.4.0`) — first push since `v0.1.0`; `v0.2.0`/`v0.3.0` tags backfilled at their release commits; fresh clones build again (`I-98`).
 - **Multi-channel CC support verified against shared crate** (`I-53` ✅ · 2026-09-06) — verified `render_offline` with `CompositeFugue`'s new `CcTarget` support; CC lanes specified as `"channel:controller"` (e.g. `"2:74"`) deliver MIDI CC messages on the designated channel.
 - **VST3 MIDI controller mapping and per-note expression** (`I-97` ✅ · 2026-09-06 · `tppoyvxx`) — VST3 `IMidiMapping` integration mapping MIDI CCs, pitch bend, and channel pressure to parameter changes, raw polyphonic key pressure (`0xA0`) and note expressions mapped to `PolyPressureEvent` and `NoteExpressionValueEvent`, and `EventSupport` updated for VST3.
 - **Offline render fixes, automation deduplication & parity** (✅ · 2026-09-06 · `wrturnym`) — arriving-point curve easing (`I-92`), CLAP parameter duplication fix (`I-94`), `params` held-value repeat suppression (`I-95`), 60 s offline render length ceiling (`I-96`), and tool documentation cleanup (`I-93`).
