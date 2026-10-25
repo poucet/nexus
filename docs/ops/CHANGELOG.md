@@ -13,6 +13,12 @@
 
 ## Unreleased
 
+#### A fresh clone builds again; `simply-fugue` pinned by tag (`I-98`) · 2026-10-25 21:50 · xuskpswy
+
+- Removed the tracked `[patch]` that pointed `simply-fugue` at a sibling `../music-rs` checkout; `simply-fugue` is now pinned to music-rs tag `v1.0.1`, so `cargo update` no longer moves it with music-rs main. A local override belongs in an untracked cargo config (`I-98`).
+
+Gates: `cargo test --workspace --locked` 109 passed / 0 failed / 11 ignored; `cargo clippy --workspace --all-targets --locked` 24 warnings, none new.
+
 #### Multi-channel CC support verified against shared crate (`I-53`, `I-91`) · 2026-09-06 18:20 · omkzwslr
 
 - **Multi-channel CC verified (`I-53`)**: Verified `render_offline` with `CompositeFugue`'s new `CcTarget` support; CC lanes specified as `"channel:controller"` (e.g. `"2:74"`) deliver MIDI CC messages on the designated channel.

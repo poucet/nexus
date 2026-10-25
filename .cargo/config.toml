@@ -12,6 +12,3 @@ bundle-vst3 = "run --package xtask -- build --format vst3"
 
 # Build, bundle, and install into the user's CLAP/VST3 plugin folders.
 install-plugin = "run --package xtask -- install"
-
-[patch."https://github.com/poucet/music-rs.git"]
-simply-fugue = { path = "../music-rs/crates/simply-fugue" }
