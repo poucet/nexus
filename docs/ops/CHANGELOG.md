@@ -15,6 +15,12 @@
 
 ## Unreleased
 
+#### Normalised parameter values on the plugin's own curve (`N9`) · 2026-10-31 05:52 · qpwqlkmz
+
+- **`PluginInstance::set_param_normalized(id, 0..=1)`**: a knob's travel lands on the plugin's own curve, format-blind. VST3 asks its edit controller (`normalizedParamToPlain`), so a log frequency moves as in the plugin's editor; CLAP (the default) is linear in the plain range.
+- **`PluginInstance::normalizer()`** returns every parameter's normalised ↔ plain curve, sampled on the owning thread, `Send` and realtime-safe: a thread that pushes `ParamChange`s (plain values) onto the ring converts a normalised knob with `Normalizer::plain(id, x)` first. `Normalizer` (re-exported as `nexus_host::Normalizer`) gains `plain` (the inverse of `normalize`, on the same samples) and `linear(&params)`. `ParamChange` is unchanged.
+- Tests: `Normalizer::plain` round-trips; the default on a fake plugin; `NEXUS_REAL_PLUGIN_TEST=1` `installed_vst3_plugins_take_normalised_values_on_their_own_curve` (TAL-Filter-2, Surge XT Effects).
+
 #### The owning thread, and CLAP `thread-check` (`N10`) · 2026-10-31 05:50 · uzryolow
 
 - **CLAP `thread-check`**: nexus now offers the host extension. `is_main_thread` is true on the instance's **owning thread** (the thread that loaded it, whichever thread of the process that is); `is_audio_thread` is true inside the processor's `start_processing`, `process` and `stop_processing` calls (a thread-local counter, no lock). An offline render on the owning thread is both.

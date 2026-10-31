@@ -284,3 +284,24 @@ fn installed_vst3_plugins_play_a_value_set_before_activation() {
         eprintln!("{name}: a value set while inactive reached the first block");
     }
 }
+
+/// `NEXUS_REAL_PLUGIN_TEST=1` (`N9`), VST3: a normalised value lands on the
+/// plugin's own curve, and the sampled curves agree with the plugin. (CLAP's
+/// curve is linear by definition; some CLAP plugins snap a parameter they do
+/// not mark stepped, so there is nothing to compare.)
+#[test]
+fn installed_vst3_plugins_take_normalised_values_on_their_own_curve() {
+    for plugin in real_plugins().into_iter().filter(|p| p.format == PluginFormat::Vst3) {
+        let name = format!("{} ({:?})", plugin.path.display(), plugin.format);
+        let mut instance = load(&plugin);
+        let curves = instance.normalizer();
+        for p in instance.params().into_iter().filter(|p| p.is_automatable && !p.is_readonly && !p.is_stepped) {
+            instance.set_param_normalized(p.id, 0.3).unwrap();
+            let seen = instance.param_value(p.id).unwrap();
+            let want = curves.plain(p.id, 0.3);
+            let span = (p.max_value - p.min_value).abs().max(1e-9);
+            assert!((seen - want).abs() / span < 1e-2, "{name} {}: {seen} vs {want}", p.name);
+        }
+        eprintln!("{name}: normalised values on the plugin's curve");
+    }
+}

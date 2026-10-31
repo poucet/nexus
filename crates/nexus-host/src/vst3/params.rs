@@ -130,6 +130,35 @@ impl Normalizer {
         };
         x.clamp(0.0, 1.0)
     }
+
+    /// Plain value of parameter `id` at normalised `x` (clamped to 0..=1): the
+    /// inverse of [`normalize`](Self::normalize), on the same samples.
+    /// Realtime-safe. An unlisted id is taken to be normalised already.
+    pub fn plain(&self, id: u32, x: f64) -> f64 {
+        let x = x.clamp(0.0, 1.0);
+        let Ok(i) = self.ids.binary_search(&id) else {
+            return x;
+        };
+        match &self.curves[i] {
+            Curve::Linear { min, max } => min + x * (max - min),
+            Curve::Sampled(samples) => {
+                let at = x * (Self::SAMPLES - 1) as f64;
+                let k = (at.floor() as usize).min(Self::SAMPLES - 2);
+                let t = at - k as f64;
+                samples[k] + t * (samples[k + 1] - samples[k])
+            }
+        }
+    }
+
+    /// Linear curves from a parameter list, for a format whose parameters are
+    /// linear in their plain range (CLAP).
+    pub fn linear(params: &[ParamInfo]) -> Self {
+        let range = |id: u32| params.iter().find(|p| p.id == id).map(|p| (p.min_value, p.max_value));
+        Self::sample(params.iter().map(|p| (p.id, 1)), |id, x| {
+            let (min, max) = range(id).unwrap_or((0.0, 1.0));
+            min + x * (max - min)
+        })
+    }
 }
 
 /// Where `value` falls on a monotonic curve sampled evenly over 0..=1.
@@ -221,5 +250,25 @@ mod tests {
         }
         // Exact on a sample point.
         assert_eq!(n.normalize(1, 20.0 * 1000f64.powf(0.5)), 0.5);
+    }
+
+    #[test]
+    fn plain_inverts_normalize_on_both_curves() {
+        let n = Normalizer::sample([(1, 0), (2, 0), (3, 4)], |id, x| match id {
+            1 => 20.0 * 1000f64.powf(x), // a log frequency
+            2 => 20.0 + x * 19_980.0,
+            _ => (x * 4.0).round(),
+        });
+        assert_eq!(n.plain(2, 0.5), 10_010.0);
+        assert_eq!(n.plain(3, 0.25), 1.0);
+        assert_eq!(n.plain(1, 0.5), 20.0 * 1000f64.powf(0.5), "exact on a sample");
+        for x in [0.0, 0.1, 0.33, 0.5, 0.9, 1.0] {
+            let back = n.normalize(1, n.plain(1, x));
+            assert!((back - x).abs() < 1e-9, "{x} → {back}");
+        }
+        let mid = n.plain(1, 0.25 + 0.5 / 32.0);
+        assert!((mid / (20.0 * 1000f64.powf(0.25 + 0.5 / 32.0)) - 1.0).abs() < 1e-2, "close between samples");
+        assert_eq!(n.plain(99, 0.7), 0.7, "unlisted");
+        assert_eq!(n.plain(2, 7.0), 20_000.0, "clamped");
     }
 }

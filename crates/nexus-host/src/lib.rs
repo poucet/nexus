@@ -32,4 +32,5 @@ pub use host::{
     PluginDescriptor, PluginFormat, PluginInstance, VoiceInfo,
 };
 pub use preset::Preset;
+pub use vst3::params::Normalizer;
 pub use render::{render_offline, RenderOptions, RenderResult};

@@ -184,11 +184,7 @@ impl PluginInstance for Vst3PluginInstance {
         self.param_producer = Some(producer);
         // Sampled here, on the owning thread: the audio thread never calls the
         // controller (`I-100`).
-        let normalizer = self
-            .controller
-            .as_ref()
-            .map(crate::vst3::params::Normalizer::from_controller)
-            .unwrap_or_default();
+        let normalizer = self.normalizer();
         let midi_map = self.midi_map.clone();
 
         // A fresh (ref-counted) IAudioProcessor handle for the audio thread.
@@ -238,6 +234,22 @@ impl PluginInstance for Vst3PluginInstance {
             return Ok(());
         }
         crate::host::ParamChange { id, value, offset_frames: 0 }.queue(self.param_producer.as_mut())
+    }
+
+    /// The controller converts: one call, on the plugin's own curve.
+    fn set_param_normalized(&mut self, id: u32, normalized: f64) -> Result<(), HostError> {
+        let plain = match &self.controller {
+            Some(c) => unsafe { c.normalizedParamToPlain(id, normalized.clamp(0.0, 1.0)) },
+            None => normalized.clamp(0.0, 1.0),
+        };
+        self.set_param(id, plain)
+    }
+
+    fn normalizer(&mut self) -> crate::vst3::params::Normalizer {
+        self.controller
+            .as_ref()
+            .map(crate::vst3::params::Normalizer::from_controller)
+            .unwrap_or_default()
     }
 
     fn params(&mut self) -> Vec<crate::host::ParamInfo> {

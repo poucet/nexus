@@ -212,6 +212,31 @@ pub trait PluginInstance {
         Ok(())
     }
 
+    /// Set parameter `id` from a normalised value (0..=1) on the plugin's own
+    /// curve, whatever the format (`N9`): a knob's travel maps onto a VST3 log
+    /// frequency as the plugin's editor maps it. Then as [`set_param`](Self::set_param).
+    ///
+    /// The default reads the curve from [`normalizer`](Self::normalizer), which
+    /// samples every parameter: a backend with a cheaper way overrides it.
+    fn set_param_normalized(&mut self, id: u32, normalized: f64) -> Result<(), HostError> {
+        let plain = self.normalizer().plain(id, normalized);
+        self.set_param(id, plain)
+    }
+
+    /// Every parameter's normalised ↔ plain curve, sampled now on this
+    /// (owning) thread. The result is `Send` and realtime-safe, so a thread that
+    /// pushes [`ParamChange`]s (plain values) onto the ring can convert a
+    /// normalised knob with [`Normalizer::plain`] first (`N9`). Sample again
+    /// after the plugin's parameter list changes.
+    ///
+    /// The default is linear in each parameter's plain range (CLAP's model);
+    /// VST3 samples its edit controller.
+    ///
+    /// [`Normalizer::plain`]: crate::vst3::params::Normalizer::plain
+    fn normalizer(&mut self) -> crate::vst3::params::Normalizer {
+        crate::vst3::params::Normalizer::linear(&self.params())
+    }
+
     /// Enumerate the plugin's parameters. Empty if it exposes no parameters.
     fn params(&mut self) -> Vec<ParamInfo> {
         Vec::new()
@@ -348,6 +373,53 @@ mod tests {
     use super::*;
     use crate::PluginRef;
     use std::path::PathBuf;
+
+    /// A plugin with one 20..20 000 Hz parameter that records `set_param`.
+    #[derive(Default)]
+    struct Recorder {
+        set: Vec<(u32, f64)>,
+    }
+
+    impl PluginInstance for Recorder {
+        fn activate(&mut self, _: AudioConfig) -> Result<Box<dyn AudioProcessor>, HostError> {
+            Err(HostError::Load("not in this test".into()))
+        }
+        fn deactivate(&mut self) {}
+        fn set_param(&mut self, id: u32, value: f64) -> Result<(), HostError> {
+            self.set.push((id, value));
+            Ok(())
+        }
+        fn params(&mut self) -> Vec<ParamInfo> {
+            vec![ParamInfo {
+                id: 4,
+                name: "Cutoff".into(),
+                module: String::new(),
+                min_value: 20.0,
+                max_value: 20_000.0,
+                default_value: 1_000.0,
+                is_stepped: false,
+                is_readonly: false,
+                is_hidden: false,
+                is_bypass: false,
+                is_automatable: true,
+                is_modulatable: false,
+            }]
+        }
+    }
+
+    /// `N9`: by default a normalised value is linear in the plain range, and
+    /// the curves convert off the owning thread too.
+    #[test]
+    fn a_normalised_value_lands_on_the_plain_range() {
+        let mut plugin = Recorder::default();
+        plugin.set_param_normalized(4, 0.5).unwrap();
+        plugin.set_param_normalized(4, 2.0).unwrap();
+        assert_eq!(plugin.set, [(4, 10_010.0), (4, 20_000.0)]);
+
+        let curves = plugin.normalizer();
+        let plain = std::thread::spawn(move || curves.plain(4, 0.25)).join().unwrap();
+        assert_eq!(plain, 20.0 + 0.25 * 19_980.0);
+    }
 
     fn fake_plugin(format: PluginFormat, path: &str) -> PluginRef {
         PluginRef {
