@@ -12,7 +12,8 @@ rust-version.workspace = true
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+# cdylib: the bundle tests load by path; rlib: loaded in process (`N11`).
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 clack-plugin.workspace = true

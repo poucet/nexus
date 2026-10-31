@@ -366,6 +366,16 @@ impl Host {
             }
         }
     }
+
+    /// Load the CLAP plugin `plugin_id` from an entry compiled into this
+    /// process (`E`, the type its `clack_export_entry!` names): a test plugin
+    /// with no bundle to build or find (`N11`).
+    pub fn load_clack<E: clack_plugin::entry::Entry>(
+        &self,
+        plugin_id: &str,
+    ) -> Result<Box<dyn PluginInstance>, HostError> {
+        Ok(Box::new(crate::clap::instance::ClapPluginInstance::load_clack::<E>(plugin_id)?))
+    }
 }
 
 #[cfg(test)]

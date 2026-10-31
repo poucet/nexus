@@ -16,7 +16,11 @@ serde_json.workspace = true
 toml.workspace = true
 base64.workspace = true
 schemars.workspace = true
-clack-host.workspace = true
+# `clack-plugin`: `PluginEntry::load_from_clack`, so a plugin built into the
+# process loads without a bundle (`ClapPluginInstance::load_clack`, N11).
+# clack-plugin is already in the tree through clack-extensions.
+clack-host = { workspace = true, features = ["clack-plugin"] }
+clack-plugin.workspace = true
 clack-extensions.workspace = true
 crossbeam-channel.workspace = true
 raw-window-handle.workspace = true
@@ -33,6 +37,10 @@ objc2.workspace = true
 objc2-app-kit.workspace = true
 objc2-foundation.workspace = true
 egui = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Loaded in process by tests/in_process.rs (its rlib half).
+nexus-test-plugin = { path = "../nexus-test-plugin" }
 
 [features]
 # Optional egui "wrapper UI" (plugin selector, presets, editor frame), reused by

@@ -46,7 +46,24 @@ impl ClapPluginInstance {
         // scanning the standard plugin directories.
         let entry = unsafe { PluginEntry::load(path) }
             .map_err(|e| HostError::Load(format!("{}: {e}", path.display())))?;
+        Self::from_entry(entry, plugin_id, &path.display().to_string())
+    }
 
+    /// Instantiate `plugin_id` from a CLAP entry built into this process with
+    /// `clack_plugin` (`E` is the type its `clack_export_entry!` names), with
+    /// no bundle on disk (`N11`). The entry is told this executable's path.
+    pub fn load_clack<E: clack_plugin::entry::Entry>(plugin_id: &str) -> Result<Self, HostError> {
+        let exe = std::env::current_exe()
+            .map_err(|e| HostError::Load(format!("this executable's path: {e}")))?;
+        let path = CString::new(exe.as_os_str().as_encoded_bytes())
+            .map_err(|_| HostError::Load("executable path contains a NUL byte".into()))?;
+        let entry = PluginEntry::load_from_clack::<E>(&path)
+            .map_err(|e| HostError::Load(format!("in-process entry: {e}")))?;
+        Self::from_entry(entry, plugin_id, "in-process entry")
+    }
+
+    /// Instantiate `plugin_id` from a loaded `entry`; `what` names it in errors.
+    fn from_entry(entry: PluginEntry, plugin_id: &str, what: &str) -> Result<Self, HostError> {
         let plugin_id = CString::new(plugin_id)
             .map_err(|_| HostError::Load("plugin id contains a NUL byte".into()))?;
 
@@ -58,7 +75,7 @@ impl ClapPluginInstance {
             &plugin_id,
             &host_info(),
         )
-        .map_err(|e| HostError::Load(format!("{}: {e}", path.display())))?;
+        .map_err(|e| HostError::Load(format!("{what}: {e}")))?;
 
         Ok(Self {
             _entry: entry,

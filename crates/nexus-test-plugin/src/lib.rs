@@ -344,4 +344,8 @@ impl PluginStateImpl for MainThread<'_> {
     }
 }
 
-clack_export_entry!(SinglePluginEntry<TestGain>);
+/// The plugin's CLAP entry, for a host that loads it in process
+/// (`nexus_host::clap::instance::ClapPluginInstance::load_clack::<Entry>`).
+pub type Entry = SinglePluginEntry<TestGain>;
+
+clack_export_entry!(Entry);

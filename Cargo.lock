@@ -927,6 +927,7 @@ version = "0.1.0"
 source = "git+https://github.com/prokopyl/clack.git?rev=f874e858ad576c601367b3038af5088a4e671744#f874e858ad576c601367b3038af5088a4e671744"
 dependencies = [
  "clack-common",
+ "clack-plugin",
  "clap-sys",
  "libloading",
  "objc2-foundation 0.3.2",
@@ -2998,10 +2999,12 @@ dependencies = [
  "base64",
  "clack-extensions",
  "clack-host",
+ "clack-plugin",
  "crossbeam-channel",
  "egui",
  "hound",
  "log",
+ "nexus-test-plugin",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",

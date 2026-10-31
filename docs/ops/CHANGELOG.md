@@ -15,6 +15,12 @@
 
 ## Unreleased
 
+#### Load a CLAP plugin built into the process (`N11`) · 2026-10-31 05:54 · nopklkrq
+
+- **`Host::load_clack::<E>(plugin_id)`** (and `ClapPluginInstance::load_clack`): a CLAP plugin compiled into the process with `clack_plugin` loads through clack's `PluginEntry::load_from_clack`, with no bundle to build or find; the entry is given this executable's path. `E` is the type the plugin's `clack_export_entry!` names.
+- nexus-host turns on clack-host's `clack-plugin` feature and names `clack-plugin` directly (both already in the tree through clack-extensions; `Cargo.lock` gains three dependency lines and no package). `nexus-test-plugin` is also an rlib and exports `Entry`.
+- Test: `tests/in_process.rs` loads and plays `nexus.test.gain` in process. The other tests still load its dylib by path (`tests/common`); moving them over is optional.
+
 #### Normalised parameter values on the plugin's own curve (`N9`) · 2026-10-31 05:52 · qpwqlkmz
 
 - **`PluginInstance::set_param_normalized(id, 0..=1)`**: a knob's travel lands on the plugin's own curve, format-blind. VST3 asks its edit controller (`normalizedParamToPlain`), so a log frequency moves as in the plugin's editor; CLAP (the default) is linear in the plain range.
