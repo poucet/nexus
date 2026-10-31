@@ -15,6 +15,12 @@
 
 ## Unreleased
 
+#### VST3 `set_param` before activation reaches the processor (`I-105`) · 2026-10-31 05:44 · wsrzkkxv
+
+- On an inactive VST3 plugin `set_param` still tells the edit controller at once, and now also keeps the value (`vst3::param_changes::PendingParams`, newest per parameter); `activate()` starts the processor's parameter ring with them, so the **first block** delivers them as `IParameterChanges`. Before, the processor never heard of them and played the old value. `load_state` drops the pending values (the state is newer).
+- On an active VST3 plugin `set_param` now returns an error when the ring is full or was taken, like CLAP (`I-103`); it used to drop the change and return `Ok`. Both formats share `ParamChange::queue` for it.
+- Tests: `PendingParams` unit tests; `NEXUS_REAL_PLUGIN_TEST=1` `installed_vst3_plugins_play_a_value_set_before_activation` (TAL-Filter-2 and Surge XT Effects VST3: the first block takes the pending value off the ring).
+
 #### The wrapper tests probe no installed plugin (`I-99`) · 2026-10-31 05:42 · kqmsxoms
 
 - `nexus-wrap`'s `wrap_tests` no longer scan the installed plugins: they build `InnerPluginState::with_catalog(PluginCatalog::default())` (new constructor; `new()` still loads the cached standard catalog). A stale cache used to make three tests rescan at once and probe every installed bundle in the test process; one run panicked inside the `vst3` bindings (`getClassInfo`).

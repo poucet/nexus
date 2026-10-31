@@ -115,6 +115,19 @@ pub struct ParamChange {
     pub offset_frames: u32,
 }
 
+impl ParamChange {
+    /// Queue this change on an active plugin's parameter ring for its next
+    /// block: an error when the ring is full, or was taken by the caller
+    /// (`take_param_producer`), who then owns the changes. Both formats'
+    /// `set_param` use it while active.
+    pub(crate) fn queue(self, ring: Option<&mut rtrb::Producer<ParamChange>>) -> Result<(), HostError> {
+        let ring = ring.ok_or_else(|| {
+            HostError::Load("the parameter ring was taken; push to it instead".into())
+        })?;
+        ring.push(self).map_err(|_| HostError::Load("parameter ring full".into()))
+    }
+}
+
 /// Polyphony information reported by a plugin's `voice-info` extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VoiceInfo {

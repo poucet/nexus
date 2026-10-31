@@ -208,6 +208,55 @@ impl IParameterChangesTrait for HostParameterChanges {
     }
 }
 
+/// Parameter values set while the plugin is inactive (`I-105`).
+///
+/// A VST3 processor hears of a parameter only through a block's
+/// `IParameterChanges`, and the ring that feeds those is made at activation.
+/// Until then [`set`](Self::set) keeps the newest value per parameter, and
+/// [`ring`](Self::ring) starts the activation's ring with them, so the first
+/// block plays them. The edit controller is told at once, as before.
+#[derive(Debug, Default)]
+pub struct PendingParams {
+    /// One entry per parameter, in the order each was first set.
+    changes: Vec<crate::host::ParamChange>,
+}
+
+impl PendingParams {
+    /// Keep `value` for `id`, replacing any earlier pending value.
+    pub fn set(&mut self, id: u32, value: f64) {
+        match self.changes.iter_mut().find(|c| c.id == id) {
+            Some(change) => change.value = value,
+            None => self.changes.push(crate::host::ParamChange { id, value, offset_frames: 0 }),
+        }
+    }
+
+    /// Forget every pending value (a loaded state supersedes them).
+    pub fn clear(&mut self) {
+        self.changes.clear();
+    }
+
+    pub fn len(&self) -> usize {
+        self.changes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty()
+    }
+
+    /// The ring for an activation: room for `capacity` changes (more if more
+    /// are pending), holding every pending value at frame 0. Empties `self`.
+    pub fn ring(
+        &mut self,
+        capacity: usize,
+    ) -> (rtrb::Producer<crate::host::ParamChange>, rtrb::Consumer<crate::host::ParamChange>) {
+        let (mut producer, consumer) = rtrb::RingBuffer::new(capacity.max(self.changes.len()));
+        for change in self.changes.drain(..) {
+            producer.push(change).expect("the ring was sized for every pending change");
+        }
+        (producer, consumer)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,5 +303,41 @@ mod tests {
         }
         assert_eq!(changes.active_count(), QUEUES);
         assert_eq!(changes.dropped(), 1 + 4);
+    }
+
+    #[test]
+    fn pending_values_start_the_activation_ring_newest_first_set_order() {
+        let mut pending = PendingParams::default();
+        pending.set(7, 0.1);
+        pending.set(3, 0.2);
+        pending.set(7, 0.9); // replaces 0.1, keeps 7's place
+        assert_eq!(pending.len(), 2);
+
+        let (_producer, mut consumer) = pending.ring(1024);
+        assert!(pending.is_empty(), "handed over");
+        let got: Vec<(u32, f64, u32)> = std::iter::from_fn(|| consumer.pop().ok())
+            .map(|c| (c.id, c.value, c.offset_frames))
+            .collect();
+        assert_eq!(got, [(7, 0.9, 0), (3, 0.2, 0)]);
+    }
+
+    #[test]
+    fn the_ring_grows_to_hold_every_pending_value() {
+        let mut pending = PendingParams::default();
+        for id in 0..10 {
+            pending.set(id, id as f64);
+        }
+        let (mut producer, consumer) = pending.ring(4);
+        assert_eq!(consumer.slots(), 10);
+        assert!(producer.push(crate::host::ParamChange { id: 0, value: 0.0, offset_frames: 0 }).is_err());
+    }
+
+    #[test]
+    fn a_cleared_set_starts_an_empty_ring() {
+        let mut pending = PendingParams::default();
+        pending.set(1, 0.5);
+        pending.clear();
+        let (producer, consumer) = pending.ring(8);
+        assert_eq!((producer.slots(), consumer.slots()), (8, 0));
     }
 }

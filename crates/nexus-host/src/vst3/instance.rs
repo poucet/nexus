@@ -23,7 +23,11 @@ use crate::host::{AudioConfig, AudioProcessor, EventSupport, HostError, PluginIn
 use crate::vst3::editor::Vst3Editor;
 use crate::vst3::host_app::Vst3HostApp;
 use crate::vst3::module::{Vst3Factory, Vst3Module};
+use crate::vst3::param_changes::PendingParams;
 use crate::vst3::process::{MidiControllerMap, Vst3AudioProcessor};
+
+/// Changes the parameter ring holds between two blocks.
+const PARAM_RING: usize = 1024;
 use crate::vst3::state::HostStream;
 
 /// A loaded VST3 plugin (main-thread side).
@@ -43,6 +47,8 @@ pub struct Vst3PluginInstance {
     module: Vst3Module,
     /// Parameter change ring producer, created on activate.
     param_producer: Option<rtrb::Producer<crate::host::ParamChange>>,
+    /// Values set while inactive, played by the first block (`I-105`).
+    pending: PendingParams,
     /// Mapping from `(channel, ctrl_number)` to VST3 `ParamID`.
     midi_map: MidiControllerMap,
 }
@@ -85,6 +91,7 @@ impl Vst3PluginInstance {
             active: false,
             module,
             param_producer: None,
+            pending: PendingParams::default(),
             midi_map,
         })
     }
@@ -172,7 +179,8 @@ impl PluginInstance for Vst3PluginInstance {
         unsafe { component.setActive(1) };
         self.active = true;
 
-        let (producer, consumer) = rtrb::RingBuffer::new(1024);
+        // Values set while inactive are the first block's changes (`I-105`).
+        let (producer, consumer) = self.pending.ring(PARAM_RING);
         self.param_producer = Some(producer);
         // Sampled here, on the owning thread: the audio thread never calls the
         // controller (`I-100`).
@@ -217,19 +225,19 @@ impl PluginInstance for Vst3PluginInstance {
         self.param_producer.take()
     }
 
+    /// The controller hears at once. The processor hears through the ring
+    /// while active (an error when it is full or was taken, as on CLAP), and
+    /// through the first block after activation otherwise (`I-105`).
     fn set_param(&mut self, id: u32, value: f64) -> Result<(), HostError> {
         if let Some(controller) = &self.controller {
             let normalized = unsafe { controller.plainParamToNormalized(id, value) };
             unsafe { controller.setParamNormalized(id, normalized) };
         }
-        if let Some(producer) = &mut self.param_producer {
-            let _ = producer.push(crate::host::ParamChange {
-                id,
-                value,
-                offset_frames: 0,
-            });
+        if !self.active {
+            self.pending.set(id, value);
+            return Ok(());
         }
-        Ok(())
+        crate::host::ParamChange { id, value, offset_frames: 0 }.queue(self.param_producer.as_mut())
     }
 
     fn params(&mut self) -> Vec<crate::host::ParamInfo> {
@@ -390,6 +398,8 @@ impl PluginInstance for Vst3PluginInstance {
     }
 
     fn load_state(&mut self, data: &[u8]) -> Result<(), HostError> {
+        // The state is newer than any value set before it.
+        self.pending.clear();
         let stream = HostStream::from_bytes(data);
         let ptr = stream
             .to_com_ptr::<IBStream>()

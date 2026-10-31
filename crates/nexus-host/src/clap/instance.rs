@@ -137,16 +137,7 @@ impl HostPluginInstance for ClapPluginInstance {
     fn set_param(&mut self, id: u32, value: f64) -> Result<(), HostError> {
         if self.instance.is_active() {
             let change = crate::host::ParamChange { id, value, offset_frames: 0 };
-            return match &mut self.param_producer {
-                Some(producer) => producer
-                    .push(change)
-                    .map_err(|_| HostError::Load("parameter ring full".into())),
-                // The caller took the ring (`take_param_producer`) and owns
-                // the changes from here on.
-                None => Err(HostError::Load(
-                    "the parameter ring was taken; push to it instead".into(),
-                )),
-            };
+            return change.queue(self.param_producer.as_mut());
         }
         if crate::clap::params::flush_inactive(&mut self.instance, id, value) {
             Ok(())

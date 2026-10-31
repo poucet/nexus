@@ -209,3 +209,31 @@ fn installed_plugins_take_parameter_changes_without_allocating() {
         eprintln!("{name}: 0 allocations in {BLOCKS} blocks with parameter changes");
     }
 }
+
+/// `NEXUS_REAL_PLUGIN_TEST=1`, VST3 (`I-105`): a value set before activation
+/// waits in the activation's ring and the first block takes it.
+#[test]
+fn installed_vst3_plugins_play_a_value_set_before_activation() {
+    for plugin in real_plugins().into_iter().filter(|p| p.format == PluginFormat::Vst3) {
+        let name = plugin.path.display().to_string();
+        let mut instance = load(&plugin);
+        let target = instance
+            .params()
+            .into_iter()
+            .find(|p| p.is_automatable && !p.is_readonly && !p.is_bypass && !p.is_hidden)
+            .unwrap_or_else(|| panic!("{name}: no automatable parameter"));
+        let value = target.min_value + (target.max_value - target.min_value) * 0.75;
+        instance.set_param(target.id, value).unwrap();
+
+        let mut processor = instance.activate(config(48_000.0)).unwrap();
+        let ring = instance.take_param_producer().unwrap();
+        let free = ring.slots();
+        processor.start_processing().unwrap();
+        Blocks::new().run(processor.as_mut());
+        assert_eq!(ring.slots(), free + 1, "{name}: the first block took the pending value");
+        processor.stop_processing();
+        drop(processor);
+        instance.deactivate();
+        eprintln!("{name}: a value set while inactive reached the first block");
+    }
+}
