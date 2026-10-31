@@ -15,6 +15,12 @@
 
 ## Unreleased
 
+#### A catalog over caller-chosen folders and cache (`N13`) · 2026-10-31 05:39 · uryxmmou
+
+- **New `CatalogPaths`** (`nexus_host::CatalogPaths`): the search directories per format and the probe-cache file a catalog uses. `standard()` is today's (platform folders + the Nexus config, cache in Nexus's app-support folder); `from_config(path)` reads another config file; `with_dirs(clap, vst3)` looks only there, with no cache; `none()` looks nowhere; `.cache(Some(path) | None)` moves or drops the cache.
+- `PluginCatalog::scan_in(&paths)` and `load_or_scan_in(&paths)`; `scan()` and `load_or_scan()` are those over `CatalogPaths::standard()`, unchanged. `CatalogCache::{load_from, save_to}`, `scan::scan_dirs`, `paths::search_paths_for(&config, format)`.
+- A host that keeps its own catalog (tussen) no longer has to share Nexus's cache and config.
+
 ---
 
 ## v0.5.0 — Realtime-safe hosting, re-activation & transport

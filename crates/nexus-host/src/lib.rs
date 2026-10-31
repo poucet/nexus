@@ -24,7 +24,7 @@ pub mod vst3;
 #[cfg(feature = "ui")]
 pub mod ui;
 
-pub use discovery::catalog::{CatalogFailure, PluginCatalog, PluginRef};
+pub use discovery::catalog::{CatalogFailure, CatalogPaths, PluginCatalog, PluginRef};
 pub use fugue::{CompositeFugue, FugueDefinition, FugueEvent, TimedFugueEvent};
 pub use host::{
     AudioConfig, AudioProcessor, EventSupport, Host, HostError, ParamChange, ParamInfo,

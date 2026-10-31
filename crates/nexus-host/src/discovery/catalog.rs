@@ -5,10 +5,10 @@
 //! and skipped — real plugin folders routinely contain broken or incompatible
 //! binaries, and one bad bundle must never sink discovery.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::PluginFormat;
-use crate::discovery::{cache, scan};
+use crate::discovery::{cache, config, paths, scan};
 use crate::host::{HostError, PluginDescriptor};
 use crate::{clap, vst3};
 
@@ -52,6 +52,83 @@ pub struct CatalogFailure {
     pub error: String,
 }
 
+/// Where a catalog looks for bundles and where it caches their probes.
+///
+/// [`standard`](Self::standard) is what [`PluginCatalog::scan`] and
+/// [`PluginCatalog::load_or_scan`] use: the platform folders plus the user's
+/// Nexus config, cached under Nexus's app-support directory. A host that keeps
+/// its own catalog (or a test that must load nothing) builds its own:
+/// [`none`](Self::none) looks nowhere, [`with_dirs`](Self::with_dirs) looks
+/// only where it is told, [`from_config`](Self::from_config) reads another
+/// config file, and [`cache`](Self::cache) points the cache elsewhere (or
+/// `None`: no cache is read or written).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CatalogPaths {
+    /// Directories searched for `.clap` bundles, in order.
+    pub clap: Vec<PathBuf>,
+    /// Directories searched for `.vst3` bundles, in order.
+    pub vst3: Vec<PathBuf>,
+    /// The probe cache [`PluginCatalog::load_or_scan_in`] reads and rewrites.
+    pub cache: Option<PathBuf>,
+}
+
+impl CatalogPaths {
+    /// The platform folders and the config at [`config::config_path`], cached
+    /// at [`cache::cache_path`].
+    pub fn standard() -> Self {
+        Self::of(&config::load())
+    }
+
+    /// The platform folders and the config file at `path` (missing or invalid:
+    /// the platform folders alone), cached at [`cache::cache_path`].
+    pub fn from_config(path: &Path) -> Self {
+        Self::of(&config::load_from(path))
+    }
+
+    fn of(config: &config::Config) -> Self {
+        Self {
+            clap: paths::search_paths_for(config, PluginFormat::Clap),
+            vst3: paths::search_paths_for(config, PluginFormat::Vst3),
+            cache: cache::cache_path(),
+        }
+    }
+
+    /// Nowhere: a catalog built from it is empty and loads no plugin binary.
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// Only `clap` and `vst3`, with no cache.
+    pub fn with_dirs(clap: Vec<PathBuf>, vst3: Vec<PathBuf>) -> Self {
+        Self { clap, vst3, cache: None }
+    }
+
+    /// The same search directories, cached at `cache` (`None`: no cache).
+    pub fn cache(self, cache: Option<PathBuf>) -> Self {
+        Self { cache, ..self }
+    }
+
+    /// The search directories for `format`.
+    pub fn dirs(&self, format: PluginFormat) -> &[PathBuf] {
+        match format {
+            PluginFormat::Clap => &self.clap,
+            PluginFormat::Vst3 => &self.vst3,
+        }
+    }
+
+    /// Every bundle under these directories, tagged with its format.
+    fn bundles(&self) -> Vec<(PluginFormat, PathBuf)> {
+        [PluginFormat::Clap, PluginFormat::Vst3]
+            .into_iter()
+            .flat_map(|format| {
+                scan::scan_dirs(format, self.dirs(format))
+                    .into_iter()
+                    .map(move |path| (format, path))
+            })
+            .collect()
+    }
+}
+
 /// The full set of discovered plugins, plus the bundles that failed to probe.
 #[derive(Debug, Clone, Default)]
 pub struct PluginCatalog {
@@ -83,8 +160,14 @@ impl PluginCatalog {
     /// Never fails: bundles that can't be loaded are recorded in
     /// [`failures`](Self::failures) (and logged) and skipped.
     pub fn scan() -> Self {
+        Self::scan_in(&CatalogPaths::standard())
+    }
+
+    /// [`scan`](Self::scan) over the directories in `paths` (its cache is
+    /// neither read nor written).
+    pub fn scan_in(paths: &CatalogPaths) -> Self {
         let mut catalog = Self::default();
-        for (format, path) in scan::scan_all() {
+        for (format, path) in paths.bundles() {
             match probe_bundle(format, &path) {
                 Ok(descriptors) => catalog.push_plugins(format, &path, descriptors),
                 Err(e) => catalog.push_failure(format, &path, e.to_string()),
@@ -100,11 +183,20 @@ impl PluginCatalog {
     /// This is what apps should use at startup — a plain `scan()` loads every
     /// plugin's binary every time.
     pub fn load_or_scan() -> Self {
-        let cached = cache::CatalogCache::load();
+        Self::load_or_scan_in(&CatalogPaths::standard())
+    }
+
+    /// [`load_or_scan`](Self::load_or_scan) over the directories in `paths`,
+    /// with its cache (no cache: every bundle is probed, nothing is written).
+    pub fn load_or_scan_in(paths: &CatalogPaths) -> Self {
+        let cached = paths
+            .cache
+            .as_deref()
+            .map_or_else(cache::CatalogCache::default, cache::CatalogCache::load_from);
         let mut fresh = cache::CatalogCache::default();
         let mut catalog = Self::default();
 
-        for (format, path) in scan::scan_all() {
+        for (format, path) in paths.bundles() {
             let mtime = cache::file_mtime(&path);
             let (descriptors, error) = match (mtime, cached.entries.get(&path)) {
                 // Unchanged since last probe — reuse, without loading the
@@ -136,7 +228,9 @@ impl PluginCatalog {
             }
         }
 
-        fresh.save();
+        if let Some(cache) = &paths.cache {
+            fresh.save_to(cache);
+        }
         catalog
     }
 
@@ -204,6 +298,67 @@ mod tests {
             ..named
         };
         assert_eq!(unnamed.display_name(), "com.x.y");
+    }
+
+    /// A throwaway directory under the system temp dir, removed on drop.
+    struct Temp(PathBuf);
+
+    impl Temp {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("nexus-catalog-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Temp(dir)
+        }
+    }
+
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn no_paths_is_an_empty_catalog_and_writes_no_cache() {
+        let paths = CatalogPaths::none();
+        assert!(PluginCatalog::scan_in(&paths).is_empty());
+        let catalog = PluginCatalog::load_or_scan_in(&paths);
+        assert!(catalog.is_empty() && catalog.failures().is_empty());
+    }
+
+    /// N13: the caller chooses the folders and the cache file. A bundle with no
+    /// binary fails its probe, is recorded, and the cache lands where asked.
+    #[test]
+    fn caller_chosen_dirs_and_cache_are_the_only_ones_used() {
+        let t = Temp::new("chosen");
+        let clap = t.0.join("clap");
+        std::fs::create_dir_all(clap.join("Empty.clap")).unwrap();
+        let cache = t.0.join("cache/catalog.json");
+        let paths = CatalogPaths::with_dirs(vec![clap.clone()], vec![]).cache(Some(cache.clone()));
+
+        let catalog = PluginCatalog::load_or_scan_in(&paths);
+        assert!(catalog.is_empty());
+        assert_eq!(catalog.failures().len(), 1);
+        assert_eq!(catalog.failures()[0].path, clap.join("Empty.clap"));
+
+        let written = cache::CatalogCache::load_from(&cache);
+        let entry = written.entries.get(&clap.join("Empty.clap")).expect("cached");
+        assert!(entry.error.is_some());
+
+        // A second load reuses the cached failure: same result, no re-probe.
+        let again = PluginCatalog::load_or_scan_in(&paths);
+        assert_eq!(again.failures()[0].error, catalog.failures()[0].error);
+    }
+
+    #[test]
+    fn from_config_reads_the_given_file() {
+        let t = Temp::new("config");
+        let file = t.0.join("config.toml");
+        std::fs::write(&file, "[plugins]\nvst3 = [\"/my/vst3\"]\n").unwrap();
+        let paths = CatalogPaths::from_config(&file);
+        assert_eq!(paths.dirs(PluginFormat::Vst3).last(), Some(&PathBuf::from("/my/vst3")));
+        assert!(!paths.dirs(PluginFormat::Clap).contains(&PathBuf::from("/my/vst3")));
     }
 
     /// Build the catalog from the machine's real plugin folders. Ignored by

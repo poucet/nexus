@@ -35,10 +35,12 @@ pub struct CatalogCache {
 impl CatalogCache {
     /// Load the cache, returning an empty cache if it's missing or unreadable.
     pub fn load() -> Self {
-        let Some(path) = cache_path() else {
-            return Self::default();
-        };
-        match std::fs::read(&path) {
+        cache_path().map_or_else(Self::default, |path| Self::load_from(&path))
+    }
+
+    /// Load the cache at `path`, empty if it's missing or unreadable.
+    pub fn load_from(path: &Path) -> Self {
+        match std::fs::read(path) {
             Ok(data) => serde_json::from_slice(&data).unwrap_or_default(),
             Err(_) => Self::default(),
         }
@@ -46,12 +48,18 @@ impl CatalogCache {
 
     /// Write the cache (best-effort; failures are ignored).
     pub fn save(&self) {
-        let Some(path) = cache_path() else { return };
+        if let Some(path) = cache_path() {
+            self.save_to(&path);
+        }
+    }
+
+    /// Write the cache to `path` (best-effort; failures are ignored).
+    pub fn save_to(&self, path: &Path) {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(data) = serde_json::to_vec(self) {
-            let _ = std::fs::write(&path, data);
+            let _ = std::fs::write(path, data);
         }
     }
 }

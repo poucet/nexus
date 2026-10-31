@@ -35,9 +35,15 @@ impl PluginFormat {
 /// unreadable search directories are skipped silently, and the scan never
 /// descends into a matched bundle.
 pub fn scan(format: PluginFormat) -> Vec<PathBuf> {
+    scan_dirs(format, &paths::search_paths(format))
+}
+
+/// Locate every `format` bundle under `dirs`, in order. Like [`scan`], but the
+/// caller chooses where to look.
+pub fn scan_dirs(format: PluginFormat, dirs: &[PathBuf]) -> Vec<PathBuf> {
     let mut found = Vec::new();
-    for dir in paths::search_paths(format) {
-        scan_dir(&dir, format, MAX_DEPTH, &mut found);
+    for dir in dirs {
+        scan_dir(dir, format, MAX_DEPTH, &mut found);
     }
     found
 }

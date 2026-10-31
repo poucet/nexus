@@ -17,8 +17,14 @@ use crate::discovery::config::{self, Config};
 /// Directories are returned whether or not they exist on disk; locating them is
 /// separate from scanning them, so callers decide how to treat a missing one.
 pub fn search_paths(format: PluginFormat) -> Vec<PathBuf> {
+    search_paths_for(&config::load(), format)
+}
+
+/// [`search_paths`] with the config the caller chose (say, one read with
+/// [`config::load_from`]) instead of the one at [`config::config_path`].
+pub fn search_paths_for(config: &Config, format: PluginFormat) -> Vec<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
-    search_paths_with(home.as_deref(), &config::load(), format)
+    search_paths_with(home.as_deref(), config, format)
 }
 
 /// Pure core of [`search_paths`] with the home directory and config injected,
