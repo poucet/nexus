@@ -35,6 +35,7 @@ Headless VST3/CLAP plugin sampling, offline rendering harness (`nexus-mcp`), sta
 
 ## Landed index
 
+- **Upstream fixes for tussen** (✅ · 2026-10-31 · `uryxmmou` `kqmsxoms` `wsrzkkxv` `txrvsqmw` `uzryolow` `qpwqlkmz` `nopklkrq`, unreleased) — `CatalogPaths` (`N13`); wrapper tests probe no installed plugin (`I-99`); VST3 `set_param` before activation reaches the first block (`I-105`); MIDI 2.0 to CLAP and VST3 (`N8`); CLAP `thread-check` and "owning thread" (`N10`); `set_param_normalized` / `normalizer()` (`N9`); `Host::load_clack` (`N11`). `N12` filed as `I-107` (L).
 - **v0.5.0 Realtime-safe hosting, re-activation & transport** (✅ · 2026-10-25 · `uotyonxw` `v0.5.0`) — VST3 `process()` allocates nothing and no longer calls the edit controller (`I-100`); CLAP `request_callback` is a flag (`I-101`); CLAP deactivates and re-activates (`I-102`); CLAP `set_param` before activation (`I-103`); transport to CLAP and VST3, offline renders at the fugue's tempo (`I-104`); `crates/nexus-test-plugin` + `tests/realtime.rs`.
 - **v0.4.0 Render parity, VST3 MIDI mapping & a pinned shared crate** (✅ · 2026-10-25 · `wqnvkzop` `v0.4.0`) — first push since `v0.1.0`; `v0.2.0`/`v0.3.0` tags backfilled at their release commits; fresh clones build again (`I-98`).
 - **Multi-channel CC support verified against shared crate** (`I-53` ✅ · 2026-09-06) — verified `render_offline` with `CompositeFugue`'s new `CcTarget` support; CC lanes specified as `"channel:controller"` (e.g. `"2:74"`) deliver MIDI CC messages on the designated channel.
