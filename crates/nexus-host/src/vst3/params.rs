@@ -75,7 +75,7 @@ impl Normalizer {
     /// Sample points for a curve that is not linear.
     pub const SAMPLES: usize = 33;
 
-    /// Sample every parameter of `controller`. Main thread; not realtime.
+    /// Sample every parameter of `controller`. The owning thread; not realtime.
     pub fn from_controller(controller: &ComPtr<IEditController>) -> Self {
         let count = unsafe { controller.getParameterCount() };
         let params = (0..count).filter_map(|index| {

@@ -157,6 +157,39 @@ fn a_midi2_packet_reaches_a_clap_plugin() {
     processor.stop_processing();
 }
 
+/// `N10`: `thread-check` names the owning thread main and the thread inside
+/// `process()` audio, wherever each is.
+#[test]
+fn thread_check_names_the_owning_thread_main_and_the_processing_thread_audio() {
+    let mut instance = load(&test_plugin());
+    let mut processor = instance.activate(config(48_000.0)).unwrap();
+    processor = std::thread::spawn(move || {
+        processor.start_processing().unwrap();
+        let mut blocks = Blocks::new();
+        blocks.events.push(0, Event::ParamValue {
+            param_id: param::VOLUME,
+            note_id: -1,
+            port_index: -1,
+            channel: -1,
+            key: -1,
+            value: 0.5,
+        }); // the plugin asks for a main-thread callback
+        blocks.run(processor.as_mut());
+        processor
+    })
+    .join()
+    .unwrap();
+    assert_eq!(instance.param_value(param::THREAD_IN_PROCESS), Some(1.0), "audio, not main");
+
+    instance.pump();
+    assert_eq!(instance.param_value(param::THREAD_ON_MAIN), Some(2.0), "main, not audio");
+
+    // An offline render on the owning thread is both.
+    Blocks::new().run(processor.as_mut());
+    assert_eq!(instance.param_value(param::THREAD_IN_PROCESS), Some(3.0));
+    processor.stop_processing();
+}
+
 #[test]
 fn vst3_parameter_queues_fill_without_allocating() {
     // The VST3 processor's per-block parameter path, without a VST3 plugin:

@@ -16,7 +16,7 @@ use clack_host::utils::BeatTime;
 use clack_host::prelude::*;
 use clack_host::utils::Cookie;
 
-use crate::clap::host::NexusHost;
+use crate::clap::host::{AudioThread, NexusHost};
 use crate::clap::ports::IoLayout;
 use crate::host::{AudioProcessor, HostError, ParamChange};
 use crate::process::{
@@ -139,6 +139,7 @@ fn note_id_match(id: i32) -> Match<u32> {
 
 impl AudioProcessor for ClapAudioProcessor {
     fn start_processing(&mut self) -> Result<(), HostError> {
+        let _audio = AudioThread::enter();
         self.processor
             .start_processing()
             .map(|_| ())
@@ -146,10 +147,12 @@ impl AudioProcessor for ClapAudioProcessor {
     }
 
     fn stop_processing(&mut self) {
+        let _audio = AudioThread::enter();
         let _ = self.processor.stop_processing();
     }
 
     fn process(&mut self, block: &mut ProcessBlock<'_>) {
+        let _audio = AudioThread::enter();
         // Disjoint field borrows: pull fields into locals so the borrow checker
         // can see the audio buffers, event list, and processor are independent.
         let Self {

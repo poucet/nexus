@@ -11,7 +11,8 @@
 //!   read with `param_value`: the transport's tempo, play state and position
 //!   (`I-104`), the sample rate of the last activation (`I-102`), how
 //!   many main-thread callbacks the host has run, and the last MIDI 2.0
-//!   packet it delivered (`N8`).
+//!   packet it delivered (`N8`), and what the host's `thread-check` said
+//!   in `process()` and `on_main_thread` (`N10`).
 #![deny(unsafe_code)]
 
 use std::ffi::CStr;
@@ -28,6 +29,7 @@ use clack_extensions::params::{
     PluginMainThreadParams, PluginParams,
 };
 use clack_extensions::state::{PluginState, PluginStateImpl};
+use clack_extensions::thread_check::HostThreadCheck;
 use clack_plugin::events::event_types::TransportFlags;
 use clack_plugin::events::spaces::CoreEventSpace;
 use clack_plugin::prelude::*;
@@ -52,10 +54,15 @@ pub mod param {
     pub const CALLBACKS: u32 = 6;
     /// The first word of the last MIDI 2.0 (UMP) packet `process()` saw.
     pub const MIDI2: u32 = 7;
+    /// What the host's `thread-check` said inside the last `process()`:
+    /// 1 for the audio thread + 2 for the main thread (-1: no `thread-check`).
+    pub const THREAD_IN_PROCESS: u32 = 8;
+    /// The same, inside the last `on_main_thread`.
+    pub const THREAD_ON_MAIN: u32 = 9;
 }
 
 /// `(id, name, writable)`, in `params` index order.
-const PARAMS: [(u32, &[u8], bool); 7] = [
+const PARAMS: [(u32, &[u8], bool); 9] = [
     (param::VOLUME, b"Volume", true),
     (param::TEMPO, b"Tempo", false),
     (param::PLAYING, b"Playing", false),
@@ -63,12 +70,16 @@ const PARAMS: [(u32, &[u8], bool); 7] = [
     (param::SAMPLE_RATE, b"Sample rate", false),
     (param::CALLBACKS, b"Callbacks", false),
     (param::MIDI2, b"MIDI 2.0", false),
+    (param::THREAD_IN_PROCESS, b"Thread in process", false),
+    (param::THREAD_ON_MAIN, b"Thread on main", false),
 ];
 
 /// One `f64` slot per parameter, shared by every thread of the plugin.
 pub struct Shared {
     /// Indexed like [`PARAMS`].
     values: [AtomicU64; PARAMS.len()],
+    /// The host's `thread-check`, if it offers one.
+    thread_check: Option<HostThreadCheck>,
 }
 
 impl Shared {
@@ -87,6 +98,15 @@ impl Shared {
         if let Some(i) = Self::slot(id) {
             self.values[i].store(value.to_bits(), Ordering::Relaxed);
         }
+    }
+
+    /// What `thread-check` says about the calling thread (see
+    /// [`param::THREAD_IN_PROCESS`]).
+    fn thread(&self, host: &HostSharedHandle) -> f64 {
+        let Some(check) = self.thread_check else { return -1.0 };
+        let audio = check.is_audio_thread(host).unwrap_or(false);
+        let main = check.is_main_thread(host).unwrap_or(false);
+        f64::from(u8::from(audio) + 2 * u8::from(main))
     }
 
     /// Apply a host `ParamValue` event to `VOLUME`; true if it was one.
@@ -125,18 +145,19 @@ impl DefaultPluginFactory for TestGain {
         PluginDescriptor::new(ID, "nexus test gain").with_features([AUDIO_EFFECT, STEREO])
     }
 
-    fn new_shared(_host: HostSharedHandle<'_>) -> Result<Shared, PluginError> {
-        let shared = Shared { values: Default::default() };
+    fn new_shared(host: HostSharedHandle<'_>) -> Result<Shared, PluginError> {
+        let shared =
+            Shared { values: Default::default(), thread_check: host.get_extension() };
         shared.set(param::VOLUME, 1.0);
         shared.set(param::PLAYING, -1.0);
         Ok(shared)
     }
 
     fn new_main_thread<'a>(
-        _host: HostMainThreadHandle<'a>,
+        host: HostMainThreadHandle<'a>,
         shared: &'a Shared,
     ) -> Result<MainThread<'a>, PluginError> {
-        Ok(MainThread { shared })
+        Ok(MainThread { shared, host })
     }
 }
 
@@ -165,6 +186,7 @@ impl<'a> PluginAudioProcessor<'a, Shared, MainThread<'a>> for Processor<'a> {
         mut audio: Audio,
         events: Events,
     ) -> Result<ProcessStatus, PluginError> {
+        self.shared.set(param::THREAD_IN_PROCESS, self.shared.thread(&self.host));
         match process.transport {
             Some(t) => {
                 self.shared.set(param::TEMPO, t.tempo);
@@ -226,10 +248,13 @@ impl PluginAudioProcessorParams for Processor<'_> {
 pub struct MainThread<'a> {
     /// The plugin's shared slots.
     shared: &'a Shared,
+    /// For `thread-check` on this side.
+    host: HostMainThreadHandle<'a>,
 }
 
 impl<'a> PluginMainThread<'a, Shared> for MainThread<'a> {
     fn on_main_thread(&mut self) {
+        self.shared.set(param::THREAD_ON_MAIN, self.shared.thread(&self.host));
         let n = self.shared.get(param::CALLBACKS).unwrap_or(0.0);
         self.shared.set(param::CALLBACKS, n + 1.0);
     }

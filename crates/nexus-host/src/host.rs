@@ -154,16 +154,23 @@ pub struct PresetInfo {
     pub category: Option<String>,
 }
 
-/// A loaded plugin, owned on the **main thread**.
+/// A loaded plugin, owned by **one thread**: the thread that loaded it.
 ///
-/// Holds the main-thread concerns (params, state, editor — added per aspect)
+/// That owning thread is what the plugin formats call the "main thread": every
+/// method here runs on it, and the CLAP `thread-check` extension answers
+/// `is_main_thread` there. It need not be the process's main thread (a host may
+/// keep its plugins on a thread of their own), except for the editor:
+/// [`open_editor`](Self::open_editor) on macOS needs the process's main thread.
+///
+/// Holds the owning-thread concerns (params, state, editor — added per aspect)
 /// and produces the realtime audio half via [`activate`](Self::activate). This
 /// mirrors how both CLAP (clack) and VST3 split a plugin: a non-`Send`
 /// main-thread object plus a separate `Send` audio processor. The engine keeps
-/// the instance here and moves the [`AudioProcessor`] onto the audio thread.
+/// the instance on its owning thread and moves the [`AudioProcessor`] onto the
+/// audio thread.
 pub trait PluginInstance {
     /// Activate at the given sample rate / max block size, returning the
-    /// audio-thread processor. The instance stays on the main thread.
+    /// audio-thread processor. The instance stays on its owning thread.
     fn activate(&mut self, config: AudioConfig) -> Result<Box<dyn AudioProcessor>, HostError>;
 
     /// Deactivate, after the processor has been stopped and dropped. Idempotent.
@@ -273,7 +280,7 @@ pub trait PluginInstance {
     fn close_editor(&mut self) {}
 
     /// Run any main-thread work the plugin has requested (drives its GUI). Call
-    /// regularly from the UI thread while a plugin is loaded.
+    /// regularly (every ~10 ms) from the owning thread while a plugin is loaded.
     fn pump(&mut self) {}
 }
 

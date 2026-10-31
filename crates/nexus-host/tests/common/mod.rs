@@ -21,6 +21,8 @@ pub mod param {
     pub const SAMPLE_RATE: u32 = 5;
     pub const CALLBACKS: u32 = 6;
     pub const MIDI2: u32 = 7;
+    pub const THREAD_IN_PROCESS: u32 = 8;
+    pub const THREAD_ON_MAIN: u32 = 9;
 }
 
 /// `crates/nexus-test-plugin`, built once per test process into its own target

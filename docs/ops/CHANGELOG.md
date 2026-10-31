@@ -15,6 +15,12 @@
 
 ## Unreleased
 
+#### The owning thread, and CLAP `thread-check` (`N10`) · 2026-10-31 05:50 · uzryolow
+
+- **CLAP `thread-check`**: nexus now offers the host extension. `is_main_thread` is true on the instance's **owning thread** (the thread that loaded it, whichever thread of the process that is); `is_audio_thread` is true inside the processor's `start_processing`, `process` and `stop_processing` calls (a thread-local counter, no lock). An offline render on the owning thread is both.
+- Docs say "the owning thread" where they said "the main thread": `PluginInstance` belongs to the thread that loaded it, which need not be the process's main thread, except for `open_editor` on macOS.
+- Test: `thread_check_names_the_owning_thread_main_and_the_processing_thread_audio` (the test plugin reports what `thread-check` said in `process()` and `on_main_thread`, read-only parameters 8 and 9).
+
 #### MIDI 2.0 events reach plugins (`N8`) · 2026-10-31 05:48 · txrvsqmw
 
 - **CLAP**: `Event::Midi2` is delivered as a `clap_event_midi2`, as `Event::Midi` is as `clap_event_midi`. `nexus-wrap` now forwards a DAW's MIDI 2.0 events to the inner plugin as well.

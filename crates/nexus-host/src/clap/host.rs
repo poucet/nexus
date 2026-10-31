@@ -8,9 +8,12 @@
 
 use clack_extensions::gui::{GuiSize, HostGui, HostGuiImpl};
 use clack_extensions::log::{HostLog, HostLogImpl, LogSeverity};
+use clack_extensions::thread_check::{HostThreadCheck, HostThreadCheckImpl};
 use clack_host::prelude::*;
 use crossbeam_channel::Sender;
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::ThreadId;
 
 /// Messages sent to the main thread by the plugin's editor (`gui` extension).
 ///
@@ -43,7 +46,7 @@ impl HostHandlers for NexusHost {
     type AudioProcessor<'a> = ();
 
     fn declare_extensions(builder: &mut HostExtensions<Self>, _shared: &Self::Shared<'_>) {
-        builder.register::<HostLog>().register::<HostGui>();
+        builder.register::<HostLog>().register::<HostGui>().register::<HostThreadCheck>();
     }
 }
 
@@ -52,11 +55,19 @@ pub struct NexusHostShared {
     sender: Sender<MainThreadMessage>,
     /// Set by `request_callback` from any thread; cleared by `pump`.
     callback_requested: AtomicBool,
+    /// The thread that made the instance and owns it: the plugin's "main
+    /// thread" (`thread-check`), whichever thread of the process it is.
+    owner: ThreadId,
 }
 
 impl NexusHostShared {
+    /// Made on the thread that will own the instance.
     pub fn new(sender: Sender<MainThreadMessage>) -> Self {
-        Self { sender, callback_requested: AtomicBool::new(false) }
+        Self {
+            sender,
+            callback_requested: AtomicBool::new(false),
+            owner: std::thread::current().id(),
+        }
     }
 
     /// Whether the plugin asked for `on_main_thread` since the last call;
@@ -83,7 +94,51 @@ impl<'a> SharedHandler<'a> for NexusHostShared {
     }
 }
 
-/// Host data only touched on the main thread.
+thread_local! {
+    /// How many audio-processor calls into a plugin this thread is inside.
+    static IN_AUDIO: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Marks the current thread as a plugin's audio thread while it lives: held
+/// around every `start_processing`, `process` and `stop_processing` call, so
+/// `thread-check`'s `is_audio_thread` answers true inside them. A
+/// thread-local counter: no allocation, no lock.
+pub(crate) struct AudioThread(());
+
+impl AudioThread {
+    pub(crate) fn enter() -> Self {
+        IN_AUDIO.with(|n| n.set(n.get() + 1));
+        Self(())
+    }
+
+    fn here() -> bool {
+        IN_AUDIO.with(|n| n.get() > 0)
+    }
+}
+
+impl Drop for AudioThread {
+    fn drop(&mut self) {
+        IN_AUDIO.with(|n| n.set(n.get() - 1));
+    }
+}
+
+/// Host-side `thread-check` extension (`N10`). The main thread is the
+/// instance's owning thread; the audio thread is whichever thread is inside
+/// one of its processor's calls. An offline render on the owning thread is
+/// both, which CLAP allows. `is_main_thread` reads `std::thread::current()`,
+/// which allocates once on a thread std did not start (a CoreAudio thread)
+/// the first time it is asked there.
+impl HostThreadCheckImpl for NexusHostShared {
+    fn is_main_thread(&self) -> bool {
+        std::thread::current().id() == self.owner
+    }
+
+    fn is_audio_thread(&self) -> bool {
+        AudioThread::here()
+    }
+}
+
+/// Host data only touched on the owning (main) thread.
 pub struct NexusHostMainThread<'a> {
     _shared: &'a NexusHostShared,
     /// Handle to the running plugin instance, set once it is initialized.

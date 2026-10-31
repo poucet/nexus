@@ -80,7 +80,7 @@ pub struct Vst3AudioProcessor {
     vst_events: Vec<Event>,
     param_consumer: rtrb::Consumer<ParamChange>,
     param_changes: ComWrapper<HostParameterChanges>,
-    /// Plain → normalised, sampled on the main thread (`I-100`).
+    /// Plain → normalised, sampled on the owning thread (`I-100`).
     normalizer: Normalizer,
     midi_map: MidiControllerMap,
     transport: TransportClock,
