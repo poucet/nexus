@@ -1,16 +1,26 @@
 //! Integration tests for nexus-wrap.
+//!
+//! None of them probes an installed plugin: each state is built over an empty
+//! catalog (`I-99`). Probing loads a plugin's binary into this process, where a
+//! broken one panics the test binary and a copy-protected one can block on a
+//! licence dialog.
 
 use std::sync::Arc;
 
-use nexus_tools::bridge::{HostBridge, HostSession, MainThreadHost};
-use nexus_tools::types::*;
+use nexus_host::PluginCatalog;
+use nexus_tools::bridge::{HostBridge, MainThreadHost};
 use nexus_tools::{ToolRegistry, ToolsService};
 use nexus_wrap::bridge::InnerPluginState;
 use nexus_wrap::state::WrapStateEnvelope;
 
+/// A state with no installed plugin in its catalog.
+fn inner() -> InnerPluginState {
+    InnerPluginState::with_catalog(PluginCatalog::default())
+}
+
 #[test]
 fn inner_plugin_state_initial_session() {
-    let mut state = InnerPluginState::new();
+    let mut state = inner();
     let session = state.session();
     assert_eq!(session.loaded, None);
     assert_eq!(session.sample_rate, Some(48000.0));
@@ -18,17 +28,14 @@ fn inner_plugin_state_initial_session() {
 
 #[test]
 fn inner_plugin_state_list_plugins() {
-    let mut state = InnerPluginState::new();
+    let mut state = inner();
     let plugins = state.list_plugins(None).unwrap();
-    // Catalog may be empty in clean test env or contain scanned plugins
-    for p in &plugins {
-        assert!(!p.id.is_empty());
-    }
+    assert!(plugins.is_empty(), "the test catalog is empty: {plugins:?}");
 }
 
 #[test]
 fn inner_plugin_state_params_empty_when_no_plugin() {
-    let mut state = InnerPluginState::new();
+    let mut state = inner();
     let res = state.list_params(None, None, None);
     assert!(res.is_err());
     assert_eq!(res.unwrap_err().code, nexus_tools::ErrorCode::NoPlugin);
@@ -67,7 +74,7 @@ async fn tools_bridge_communication_with_inner_state() {
 
     // Spawn mock main thread drain loop
     std::thread::spawn(move || {
-        let mut inner = InnerPluginState::new();
+        let mut inner = inner();
         while let Ok(req) = rx.recv() {
             nexus_tools::bridge::handle(req, &mut inner);
         }

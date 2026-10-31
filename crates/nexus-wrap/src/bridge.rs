@@ -34,8 +34,15 @@ pub struct InnerPluginState {
 }
 
 impl InnerPluginState {
+    /// The installed plugins (the cached standard catalog), no plugin loaded.
     pub fn new() -> Self {
-        let catalog = PluginCatalog::load_or_scan();
+        Self::with_catalog(PluginCatalog::load_or_scan())
+    }
+
+    /// Over a catalog the caller built: tests pass an empty one (or one from
+    /// [`nexus_host::CatalogPaths`]) so no installed plugin is probed in the
+    /// test process.
+    pub fn with_catalog(catalog: PluginCatalog) -> Self {
         Self {
             host: Host::new(),
             catalog,

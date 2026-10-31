@@ -9,7 +9,7 @@
 //!   NEXUS_VST3_TEST=1 cargo test -p nexus-host --test vst3_render
 
 use nexus_host::process::{AudioBuffer, Event, EventBuffer, ProcessBlock};
-use nexus_host::{AudioConfig, Host, PluginCatalog, PluginFormat, PluginRef};
+use nexus_host::{AudioConfig, CatalogPaths, Host, PluginCatalog, PluginFormat, PluginRef};
 
 fn main() {
     if std::env::var_os("NEXUS_VST3_TEST").is_none() {
@@ -20,7 +20,8 @@ fn main() {
         return;
     }
 
-    let catalog = PluginCatalog::scan();
+    // VST3 folders only: no CLAP binary is loaded into this process.
+    let catalog = PluginCatalog::scan_in(&CatalogPaths { clap: vec![], ..CatalogPaths::standard() });
     let Some(plugin) = pick_synth(&catalog) else {
         eprintln!("no known VST3 synth installed; skipping");
         return;

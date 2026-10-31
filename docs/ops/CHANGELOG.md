@@ -15,6 +15,11 @@
 
 ## Unreleased
 
+#### The wrapper tests probe no installed plugin (`I-99`) · 2026-10-31 05:42 · kqmsxoms
+
+- `nexus-wrap`'s `wrap_tests` no longer scan the installed plugins: they build `InnerPluginState::with_catalog(PluginCatalog::default())` (new constructor; `new()` still loads the cached standard catalog). A stale cache used to make three tests rescan at once and probe every installed bundle in the test process; one run panicked inside the `vst3` bindings (`getClassInfo`).
+- `nexus-host/tests/vst3_render.rs` (`NEXUS_VST3_TEST=1`) scans the VST3 folders only (`scan_in` over `CatalogPaths::standard()` without CLAP folders), so it loads no CLAP binary. It still loads real VST3s in process by design.
+
 #### A catalog over caller-chosen folders and cache (`N13`) · 2026-10-31 05:39 · uryxmmou
 
 - **New `CatalogPaths`** (`nexus_host::CatalogPaths`): the search directories per format and the probe-cache file a catalog uses. `standard()` is today's (platform folders + the Nexus config, cache in Nexus's app-support folder); `from_config(path)` reads another config file; `with_dirs(clap, vst3)` looks only there, with no cache; `none()` looks nowhere; `.cache(Some(path) | None)` moves or drops the cache.
