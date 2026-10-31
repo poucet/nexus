@@ -143,6 +143,20 @@ Event::Transport(playing_at(8.0)),
     processor.stop_processing();
 }
 
+/// `N8`: a MIDI 2.0 packet reaches a CLAP plugin as a `clap_event_midi2`.
+#[test]
+fn a_midi2_packet_reaches_a_clap_plugin() {
+    let mut instance = load(&test_plugin());
+    let mut processor = instance.activate(config(48_000.0)).unwrap();
+    processor.start_processing().unwrap();
+    let mut blocks = Blocks::new();
+    let packet = [0x4093_3C00, 0x8000_0000, 0, 0]; // MIDI 2.0 note on, ch 3, key 60
+    blocks.events.push(10, Event::Midi2 { port_index: 0, data: packet });
+    blocks.run(processor.as_mut());
+    assert_eq!(instance.param_value(param::MIDI2), Some(f64::from(packet[0])));
+    processor.stop_processing();
+}
+
 #[test]
 fn vst3_parameter_queues_fill_without_allocating() {
     // The VST3 processor's per-block parameter path, without a VST3 plugin:

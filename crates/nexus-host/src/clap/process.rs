@@ -7,7 +7,7 @@
 
 use clack_host::events::Match;
 use clack_host::events::event_types::{
-    MidiEvent, NoteChokeEvent, NoteExpressionEvent, NoteExpressionType, NoteOffEvent, NoteOnEvent,
+    Midi2Event, MidiEvent, NoteChokeEvent, NoteExpressionEvent, NoteExpressionType, NoteOffEvent, NoteOnEvent,
     ParamGestureBeginEvent, ParamGestureEndEvent, ParamModEvent, ParamValueEvent, TransportEvent,
     TransportFlags,
 };
@@ -223,6 +223,9 @@ impl AudioProcessor for ClapAudioProcessor {
                 }
                 Event::Midi { port_index, data } => {
                     events.push(&MidiEvent::new(ev.time, *port_index, *data))
+                }
+                Event::Midi2 { port_index, data } => {
+                    events.push(&Midi2Event::new(ev.time, *port_index, *data))
                 }
                 Event::ParamValue { param_id, note_id, port_index, channel, key, value } => {
                     let port_m = if *port_index >= 0 { Match::Specific(*port_index as u16) } else { Match::All };

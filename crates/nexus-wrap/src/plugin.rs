@@ -270,6 +270,14 @@ impl<'a> PluginAudioProcessor<'a, NexusWrapShared<'a>, NexusWrapMainThread<'a>> 
                         data: midi.data(),
                     },
                 );
+            } else if let Some(midi) = event.as_event::<Midi2Event>() {
+                self.events_buf.push(
+                    midi.header().time(),
+                    HostEvent::Midi2 {
+                        port_index: midi.port_index(),
+                        data: midi.data(),
+                    },
+                );
             } else if let Some(param_val) = event.as_event::<ParamValueEvent>() {
                 let param_id = param_val.param_id().unwrap_or(ClapId::new(0)).get();
                 self.events_buf.push(

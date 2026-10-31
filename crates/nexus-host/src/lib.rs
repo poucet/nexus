@@ -17,6 +17,7 @@ pub mod discovery;
 pub mod editor_window;
 pub use simply_fugue as fugue;
 pub mod host;
+pub mod midi;
 pub mod preset;
 pub mod process;
 pub mod render;

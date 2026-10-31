@@ -21,6 +21,7 @@ use vst3_sdk::Steinberg::Vst::{
 use vst3_sdk::{ComPtr, ComWrapper};
 
 use crate::host::{AudioProcessor, HostError, ParamChange};
+use crate::midi::{ChannelVoice, Control};
 use crate::process::{
     Event as FacadeEvent, NoteEventKind, NoteExpression as FacadeNoteExpression, ProcessBlock,
     TimedEvent, Transport, TransportClock,
@@ -164,22 +165,30 @@ pub fn fill_context(context: &mut ProcessContext, t: &Transport, sample_rate: f6
     context.timeSigDenominator = i32::from(t.time_sig_denominator);
 }
 
-/// A MIDI message the plugin's `IMidiMapping` routes to a parameter: CC,
-/// pitch bend or channel pressure, as `(param id, normalised value)`. A channel
+/// A raw MIDI event — MIDI 1.0 bytes or a UMP packet (`N8`) — read as a
+/// channel-voice message.
+fn voice_of(event: &FacadeEvent) -> Option<ChannelVoice> {
+    match event {
+        FacadeEvent::Midi { data, .. } => ChannelVoice::from_midi1(data),
+        FacadeEvent::Midi2 { data, .. } => ChannelVoice::from_ump(data),
+        _ => None,
+    }
+}
+
+/// A controller the plugin's `IMidiMapping` routes to a parameter: CC, pitch
+/// bend or channel pressure, as `(param id, normalised value)`. A channel
 /// without its own mapping falls back to channel 0's.
-fn midi_to_param(midi_map: &MidiControllerMap, data: &[u8; 3]) -> Option<(u32, f64)> {
-    let channel = (data[0] & 0x0F) as i16;
-    let (ctrl, norm) = match data[0] & 0xF0 {
-        0xB0 => (data[1] as i16, data[2] as f64 / 127.0),
-        0xE0 => {
-            let raw = (data[1] as u32) | ((data[2] as u32) << 7);
-            (ControllerNumbers_::kPitchBend as i16, raw as f64 / 16383.0)
-        }
-        0xD0 => (ControllerNumbers_::kAfterTouch as i16, data[1] as f64 / 127.0),
-        _ => return None,
+fn midi_to_param(midi_map: &MidiControllerMap, voice: ChannelVoice) -> Option<(u32, f64)> {
+    let ChannelVoice::Controller { channel, control, value } = voice else {
+        return None;
+    };
+    let ctrl = match control {
+        Control::Cc(n) => n as i16,
+        Control::PitchBend => ControllerNumbers_::kPitchBend as i16,
+        Control::ChannelPressure => ControllerNumbers_::kAfterTouch as i16,
     };
     let id = midi_map.get(&(channel, ctrl)).or_else(|| midi_map.get(&(0, ctrl)))?;
-    Some((*id, norm))
+    Some((*id, value))
 }
 
 /// Translate one façade event into a VST3 event, if it maps to a note, poly pressure,
@@ -271,21 +280,14 @@ fn to_vst_event(timed: &TimedEvent) -> Option<Event> {
                 )),
             }
         }
-        FacadeEvent::Midi { data, .. } => {
-            let status = data[0] & 0xF0;
-            let channel = (data[0] & 0x0F) as i16;
-            let key = data[1] as i16;
-            let velocity = data[2] as f32 / 127.0;
-            match status {
-                0x90 if data[2] > 0 => Some(on(channel, key, velocity, -1)),
-                0x80 | 0x90 => Some(off(channel, key, velocity, -1)),
-                0xA0 => {
-                    let pressure = (data[2] as f32 / 127.0).clamp(0.0, 1.0);
-                    Some(poly_pressure(channel, key, pressure, -1))
-                }
-                _ => None,
+        FacadeEvent::Midi { .. } | FacadeEvent::Midi2 { .. } => match voice_of(&timed.event)? {
+            ChannelVoice::NoteOn { channel, key, velocity } => Some(on(channel, key, velocity as f32, -1)),
+            ChannelVoice::NoteOff { channel, key, velocity } => Some(off(channel, key, velocity as f32, -1)),
+            ChannelVoice::PolyPressure { channel, key, pressure } => {
+                Some(poly_pressure(channel, key, pressure as f32, -1))
             }
-        }
+            ChannelVoice::Controller { .. } => None, // a parameter, above
+        },
         _ => None,
     }
 }
@@ -341,8 +343,10 @@ impl AudioProcessor for Vst3AudioProcessor {
                 FacadeEvent::ParamValue { param_id, value, .. } => {
                     param_changes.push(*param_id, offset, normalizer.normalize(*param_id, *value));
                 }
-                FacadeEvent::Midi { data, .. } => {
-                    if let Some((param_id, norm)) = midi_to_param(midi_map, data) {
+                event @ (FacadeEvent::Midi { .. } | FacadeEvent::Midi2 { .. }) => {
+                    if let Some((param_id, norm)) =
+                        voice_of(event).and_then(|v| midi_to_param(midi_map, v))
+                    {
                         param_changes.push(param_id, offset, norm);
                     }
                 }
@@ -596,6 +600,35 @@ mod tests {
             };
             assert!(to_vst_event(&midi).is_none());
         }
+    }
+
+    /// `N8`: a MIDI 2.0 packet becomes a VST3 note at its 16-bit velocity, and
+    /// its 32-bit controllers reach mapped parameters.
+    #[test]
+    fn a_midi2_packet_becomes_a_note_or_a_mapped_parameter() {
+        let midi2 = |w0: u32, w1: u32| TimedEvent {
+            time: 3,
+            event: FacadeEvent::Midi2 { port_index: 0, data: [w0, w1, 0, 0] },
+        };
+        let e = to_vst_event(&midi2(0x4092_4000, 0x8000_0000)).expect("note on");
+        assert_eq!(e.r#type, EventTypes_::kNoteOnEvent as u16);
+        let n = unsafe { e.__field0.noteOn };
+        assert_eq!((n.channel, n.pitch), (2, 64));
+        assert!((n.velocity - 0x8000 as f32 / 65535.0).abs() < 1e-6);
+
+        let e = to_vst_event(&midi2(0x4082_4000, 0xFFFF_0000)).expect("note off");
+        assert_eq!(e.r#type, EventTypes_::kNoteOffEvent as u16);
+
+        let cc = midi2(0x40B1_4A00, u32::MAX / 4); // ch 1, CC 74
+        assert!(to_vst_event(&cc).is_none(), "a controller is a parameter, not an event");
+        let map: MidiControllerMap = [((1, 74), 9), ((0, ControllerNumbers_::kPitchBend as i16), 12)].into();
+        let voice = voice_of(&cc.event).unwrap();
+        let (id, value) = midi_to_param(&map, voice).expect("CC 74 is mapped");
+        assert_eq!(id, 9);
+        assert!((value - 0.25).abs() < 1e-9, "32-bit value kept: {value}");
+
+        let bend = voice_of(&midi2(0x40E5_0000, u32::MAX).event).unwrap();
+        assert_eq!(midi_to_param(&map, bend), Some((12, 1.0)), "falls back to channel 0's mapping");
     }
 
     #[test]

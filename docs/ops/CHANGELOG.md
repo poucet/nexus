@@ -15,6 +15,12 @@
 
 ## Unreleased
 
+#### MIDI 2.0 events reach plugins (`N8`) · 2026-10-31 05:48 · txrvsqmw
+
+- **CLAP**: `Event::Midi2` is delivered as a `clap_event_midi2`, as `Event::Midi` is as `clap_event_midi`. `nexus-wrap` now forwards a DAW's MIDI 2.0 events to the inner plugin as well.
+- **VST3**: new `nexus_host::midi::ChannelVoice` reads MIDI 1.0 bytes and UMP packets (message types 2 and 4) alike. A MIDI 2.0 note on/off becomes a VST3 note at its 16-bit velocity, poly pressure a `PolyPressureEvent`, and CC, pitch bend and channel pressure reach the parameters `IMidiMapping` names at their 32-bit value. MIDI 1.0 behaves as before (the same reader). Per-note controllers, program change and system messages are still not carried.
+- Tests: `midi` unit tests, a VST3 conversion test, and `a_midi2_packet_reaches_a_clap_plugin` (the test plugin reports the packet through a new read-only `MIDI 2.0` parameter, id 7).
+
 #### VST3 `set_param` before activation reaches the processor (`I-105`) · 2026-10-31 05:44 · wsrzkkxv
 
 - On an inactive VST3 plugin `set_param` still tells the edit controller at once, and now also keeps the value (`vst3::param_changes::PendingParams`, newest per parameter); `activate()` starts the processor's parameter ring with them, so the **first block** delivers them as `IParameterChanges`. Before, the processor never heard of them and played the old value. `load_state` drops the pending values (the state is newer).

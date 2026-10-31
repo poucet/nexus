@@ -9,8 +9,9 @@
 //!   is what made nexus allocate on the audio thread (`I-101`);
 //! - **reports what the host sent** through read-only parameters the host can
 //!   read with `param_value`: the transport's tempo, play state and position
-//!   (`I-104`), the sample rate of the last activation (`I-102`) and how
-//!   many main-thread callbacks the host has run.
+//!   (`I-104`), the sample rate of the last activation (`I-102`), how
+//!   many main-thread callbacks the host has run, and the last MIDI 2.0
+//!   packet it delivered (`N8`).
 #![deny(unsafe_code)]
 
 use std::ffi::CStr;
@@ -49,16 +50,19 @@ pub mod param {
     pub const SAMPLE_RATE: u32 = 5;
     /// How many times the host ran `on_main_thread`.
     pub const CALLBACKS: u32 = 6;
+    /// The first word of the last MIDI 2.0 (UMP) packet `process()` saw.
+    pub const MIDI2: u32 = 7;
 }
 
 /// `(id, name, writable)`, in `params` index order.
-const PARAMS: [(u32, &[u8], bool); 6] = [
+const PARAMS: [(u32, &[u8], bool); 7] = [
     (param::VOLUME, b"Volume", true),
     (param::TEMPO, b"Tempo", false),
     (param::PLAYING, b"Playing", false),
     (param::BEATS, b"Beats", false),
     (param::SAMPLE_RATE, b"Sample rate", false),
     (param::CALLBACKS, b"Callbacks", false),
+    (param::MIDI2, b"MIDI 2.0", false),
 ];
 
 /// One `f64` slot per parameter, shared by every thread of the plugin.
@@ -191,6 +195,9 @@ impl<'a> PluginAudioProcessor<'a, Shared, MainThread<'a>> for Processor<'a> {
             for event in batch.events() {
                 if self.shared.handle(event) {
                     self.host.request_callback();
+                }
+                if let Some(CoreEventSpace::Midi2(midi)) = event.as_core_event() {
+                    self.shared.set(param::MIDI2, f64::from(midi.data()[0]));
                 }
             }
             // Scale only this batch's samples (clack's example scales the whole
