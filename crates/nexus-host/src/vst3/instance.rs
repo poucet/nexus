@@ -8,8 +8,6 @@
 
 use std::path::Path;
 
-use crossbeam_channel::Receiver;
-
 use vst3_sdk::Steinberg::Vst::{
     BusDirection, BusDirections_, BusInfo, ControllerNumbers_, IAudioProcessor, IComponentHandler,
     RestartFlags_,
@@ -24,8 +22,8 @@ use vst3_sdk::{ComPtr, ComWrapper};
 use crate::host::{AudioConfig, AudioProcessor, EventSupport, HostError, PluginInstance};
 #[cfg(target_os = "macos")]
 use crate::vst3::editor::Vst3Editor;
-use crate::notice::Notice;
-use crate::vst3::handler::{HandlerCall, Vst3ComponentHandler};
+use crate::notice::{Notice, NoticeReceiver};
+use crate::vst3::handler::{HandlerQueue, Vst3ComponentHandler};
 use crate::vst3::host_app::Vst3HostApp;
 use crate::vst3::module::{Vst3Factory, Vst3Module};
 use crate::vst3::param_changes::PendingParams;
@@ -59,9 +57,11 @@ pub struct Vst3PluginInstance {
     /// The controller's `IComponentHandler`; kept alive here.
     _handler: ComWrapper<Vst3ComponentHandler>,
     /// The controller's calls, queued for `pump`.
-    handler_calls: Receiver<HandlerCall>,
+    handler_calls: HandlerQueue,
     /// Notices collected on this thread, for `take_notices`.
     notices: Vec<Notice>,
+    /// The audio thread's notices (`outputParameterChanges`), made on activate.
+    audio_notices: Option<NoticeReceiver>,
 }
 
 impl Vst3PluginInstance {
@@ -112,8 +112,9 @@ impl Vst3PluginInstance {
             pending: PendingParams::default(),
             midi_map,
             _handler: handler,
-            handler_calls,
+            handler_calls: HandlerQueue::new(handler_calls),
             notices: Vec::new(),
+            audio_notices: None,
         })
     }
 
@@ -204,6 +205,11 @@ impl PluginInstance for Vst3PluginInstance {
         // Values set while inactive are the first block's changes (`I-105`).
         let (producer, consumer) = self.pending.ring(PARAM_RING);
         self.param_producer = Some(producer);
+        let edit_consumer = self.handler_calls.activate(PARAM_RING);
+        // What the last activation's processor wrote is still the host's.
+        self.drain_audio_notices();
+        let (notice_sender, notice_receiver) = crate::notice::ring(crate::notice::RING);
+        self.audio_notices = Some(notice_receiver);
         // Sampled here, on the owning thread: the audio thread never calls the
         // controller (`I-100`).
         let normalizer = self.normalizer();
@@ -221,6 +227,8 @@ impl PluginInstance for Vst3PluginInstance {
             &out_channels,
             config.max_block_frames,
             consumer,
+            edit_consumer,
+            notice_sender,
             normalizer,
             midi_map,
             config.sample_rate,
@@ -233,6 +241,7 @@ impl PluginInstance for Vst3PluginInstance {
             self.active = false;
         }
         self.param_producer = None;
+        self.handler_calls.deactivate();
     }
 
     fn param_producer(&mut self) -> Option<&mut rtrb::Producer<crate::host::ParamChange>> {
@@ -414,23 +423,18 @@ impl PluginInstance for Vst3PluginInstance {
     }
 
     fn pump(&mut self) {
-        while let Ok(call) = self.handler_calls.try_recv() {
-            match call {
-                HandlerCall::Restart(flags) => {
-                    let processor = &self.processor;
-                    crate::vst3::handler::restart_notices(
-                        flags,
-                        || unsafe { processor.getLatencySamples() },
-                        &mut self.notices,
-                    );
-                    if flags & RestartFlags_::kMidiCCAssignmentChanged != 0 {
-                        self.midi_map =
-                            query_midi_mapping(self.controller.as_ref(), &self.component);
-                    }
-                }
-                HandlerCall::Begin(_) | HandlerCall::Perform(..) | HandlerCall::End(_) => {}
-            }
+        let controller = self.controller.as_ref();
+        let processor = &self.processor;
+        let restarts = self.handler_calls.drain(
+            |id, x| controller.map_or(x, |c| unsafe { c.normalizedParamToPlain(id, x) }),
+            || unsafe { processor.getLatencySamples() },
+            &mut self.pending,
+            &mut self.notices,
+        );
+        if restarts & RestartFlags_::kMidiCCAssignmentChanged != 0 {
+            self.midi_map = query_midi_mapping(self.controller.as_ref(), &self.component);
         }
+        self.drain_audio_notices();
         if let Some(editor) = &self.editor {
             editor.fit();
         }
@@ -471,6 +475,15 @@ impl PluginInstance for Vst3PluginInstance {
             }
         }
         Ok(())
+    }
+}
+
+impl Vst3PluginInstance {
+    /// Move the audio thread's notices into the owning thread's queue.
+    fn drain_audio_notices(&mut self) {
+        if let Some(receiver) = self.audio_notices.as_mut() {
+            receiver.drain_into(&mut self.notices);
+        }
     }
 }
 

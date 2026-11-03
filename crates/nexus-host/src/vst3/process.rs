@@ -21,6 +21,7 @@ use vst3_sdk::Steinberg::Vst::{
 use vst3_sdk::{ComPtr, ComWrapper};
 
 use crate::host::{AudioProcessor, HostError, ParamChange};
+use crate::notice::NoticeSender;
 use crate::midi::{ChannelVoice, Control};
 use crate::process::{
     Event as FacadeEvent, NoteEventKind, NoteExpression as FacadeNoteExpression, ProcessBlock,
@@ -30,6 +31,16 @@ use crate::vst3::event_list::HostEventList;
 use crate::vst3::module::LoadedModule;
 use crate::vst3::param_changes::HostParameterChanges;
 use crate::vst3::params::Normalizer;
+
+/// An edit from the plugin's editor (`performEdit`), forwarded by the owning
+/// thread to the processor, which hears of it only through a block's
+/// parameter changes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ControllerEdit {
+    pub id: u32,
+    /// As the controller gave it: no conversion on either side.
+    pub normalized: f64,
+}
 
 /// Mapping from `(channel, ctrl_number)` to VST3 `ParamID`.
 pub type MidiControllerMap = HashMap<(i16, i16), u32>;
@@ -79,7 +90,14 @@ pub struct Vst3AudioProcessor {
     event_list: ComWrapper<HostEventList>,
     vst_events: Vec<Event>,
     param_consumer: rtrb::Consumer<ParamChange>,
+    /// Edits made in the plugin's editor, already normalised: the owning
+    /// thread forwards each `performEdit` here.
+    edit_consumer: rtrb::Consumer<ControllerEdit>,
     param_changes: ComWrapper<HostParameterChanges>,
+    /// What the plugin writes to `outputParameterChanges`.
+    output_changes: ComWrapper<HostParameterChanges>,
+    /// Where those go, as plain-value notices (preallocated).
+    notices: NoticeSender,
     /// Plain → normalised, sampled on the owning thread (`I-100`).
     normalizer: Normalizer,
     midi_map: MidiControllerMap,
@@ -107,6 +125,8 @@ impl Vst3AudioProcessor {
         output_bus_channels: &[usize],
         max_frames: usize,
         param_consumer: rtrb::Consumer<ParamChange>,
+        edit_consumer: rtrb::Consumer<ControllerEdit>,
+        notices: NoticeSender,
         normalizer: Normalizer,
         midi_map: MidiControllerMap,
         sample_rate: f64,
@@ -125,7 +145,10 @@ impl Vst3AudioProcessor {
             event_list: HostEventList::new(64),
             vst_events: Vec::with_capacity(64),
             param_consumer,
+            edit_consumer,
             param_changes: HostParameterChanges::new(),
+            output_changes: HostParameterChanges::output(),
+            notices,
             normalizer,
             midi_map,
             transport: TransportClock::new(sample_rate),
@@ -319,7 +342,10 @@ impl AudioProcessor for Vst3AudioProcessor {
             event_list,
             vst_events,
             param_consumer,
+            edit_consumer,
             param_changes,
+            output_changes,
+            notices,
             normalizer,
             midi_map,
             transport,
@@ -336,6 +362,9 @@ impl AudioProcessor for Vst3AudioProcessor {
         while let Ok(change) = param_consumer.pop() {
             let offset = (change.offset_frames as i32).min(last);
             param_changes.push(change.id, offset, normalizer.normalize(change.id, change.value));
+        }
+        while let Ok(edit) = edit_consumer.pop() {
+            param_changes.push(edit.id, 0, edit.normalized);
         }
         for timed in block.events.iter() {
             let offset = (timed.time as i32).min(last);
@@ -391,6 +420,9 @@ impl AudioProcessor for Vst3AudioProcessor {
         let events_ptr = events.as_ref().map_or(ptr::null_mut(), |e| e.as_ptr());
 
         let param_changes_com = param_changes.to_com_ptr::<IParameterChanges>();
+        output_changes.begin();
+        let output_changes_com = output_changes.to_com_ptr::<IParameterChanges>();
+        let output_changes_ptr = output_changes_com.as_ref().map_or(ptr::null_mut(), |p| p.as_ptr());
         let param_changes_ptr = if param_changes.active_count() > 0 {
             param_changes_com.as_ref().map_or(ptr::null_mut(), |p| p.as_ptr())
         } else {
@@ -415,7 +447,7 @@ impl AudioProcessor for Vst3AudioProcessor {
             inputs: if audio_in.is_empty() { ptr::null_mut() } else { audio_in.as_mut_ptr() },
             outputs: if audio_out.is_empty() { ptr::null_mut() } else { audio_out.as_mut_ptr() },
             inputParameterChanges: param_changes_ptr,
-            outputParameterChanges: ptr::null_mut(),
+            outputParameterChanges: output_changes_ptr,
             inputEvents: events_ptr,
             outputEvents: ptr::null_mut(),
             processContext: context_ptr,
@@ -424,7 +456,9 @@ impl AudioProcessor for Vst3AudioProcessor {
         // SAFETY: all pointers above are valid for the duration of the call.
         let _ = unsafe { processor.process(&mut data) };
         drop(param_changes_com);
+        drop(output_changes_com);
         drop(events);
+        output_changes.drain_notices(normalizer, notices);
 
         // --- copy the main output bus (0) back into the façade ---
         if let Some(bus0) = out_buses.first() {
