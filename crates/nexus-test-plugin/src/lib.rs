@@ -12,28 +12,38 @@
 //!   (`I-104`), the sample rate of the last activation (`I-102`), how
 //!   many main-thread callbacks the host has run, and the last MIDI 2.0
 //!   packet it delivered (`N8`), and what the host's `thread-check` said
-//!   in `process()` and `on_main_thread` (`N10`).
+//!   in `process()` and `on_main_thread` (`N10`);
+//! - **tells the host things on request** (`I-107`): setting the writable
+//!   [`param::NOTIFY`] parameter to one of the [`notify`] actions makes it
+//!   announce a latency change, ask for a rescan, a flush or a restart, clear a
+//!   parameter, or play back an editor drag on `VOLUME` (gesture begin, three
+//!   values, gesture end) as output events, from `process()` or from the
+//!   main-thread `flush`.
 #![deny(unsafe_code)]
 
 use std::ffi::CStr;
 use std::fmt::Write as _;
 use std::io::{Read, Write as _};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use clack_extensions::audio_ports::{
     AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, AudioPortType, PluginAudioPorts,
     PluginAudioPortsImpl,
 };
+use clack_extensions::latency::{HostLatency, PluginLatency, PluginLatencyImpl};
 use clack_extensions::params::{
-    ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter, PluginAudioProcessorParams,
-    PluginMainThreadParams, PluginParams,
+    HostParams, ParamClearFlags, ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter,
+    ParamRescanFlags, PluginAudioProcessorParams, PluginMainThreadParams, PluginParams,
 };
 use clack_extensions::state::{PluginState, PluginStateImpl};
 use clack_extensions::thread_check::HostThreadCheck;
-use clack_plugin::events::event_types::TransportFlags;
+use clack_plugin::events::event_types::{
+    ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent, TransportFlags,
+};
 use clack_plugin::events::spaces::CoreEventSpace;
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
+use clack_plugin::utils::Cookie;
 
 /// The plugin id `nexus-host`'s tests load.
 pub const ID: &str = "nexus.test.gain";
@@ -59,10 +69,36 @@ pub mod param {
     pub const THREAD_IN_PROCESS: u32 = 8;
     /// The same, inside the last `on_main_thread`.
     pub const THREAD_ON_MAIN: u32 = 9;
+    /// Writable: set it to a [`notify`](super::notify) action and the plugin
+    /// tells the host something.
+    pub const NOTIFY: u32 = 10;
+}
+
+/// What setting [`param::NOTIFY`] makes the plugin do.
+pub mod notify {
+    /// Set its latency to [`LATENCY_SAMPLES`] and call `latency.changed`
+    /// (main-thread `flush` only).
+    pub const LATENCY: f64 = 1.0;
+    /// `params.rescan(VALUES | TEXT)` (main-thread `flush` only).
+    pub const RESCAN: f64 = 2.0;
+    /// Write an editor drag on `VOLUME` as output events: gesture begin,
+    /// [`EDIT_VALUES`], gesture end; `VOLUME` ends on the last value.
+    pub const EDIT: f64 = 3.0;
+    /// `params.request_flush`; the next flush writes `VOLUME`'s value out
+    /// (main-thread `flush` only).
+    pub const FLUSH: f64 = 4.0;
+    /// `request_restart`.
+    pub const RESTART: f64 = 5.0;
+    /// `params.clear(VOLUME)` (main-thread `flush` only).
+    pub const CLEAR: f64 = 6.0;
+    /// The latency [`LATENCY`] announces.
+    pub const LATENCY_SAMPLES: u32 = 64;
+    /// The values an [`EDIT`] drags `VOLUME` through, one sample apart.
+    pub const EDIT_VALUES: [f64; 3] = [0.1, 0.2, 0.3];
 }
 
 /// `(id, name, writable)`, in `params` index order.
-const PARAMS: [(u32, &[u8], bool); 9] = [
+const PARAMS: [(u32, &[u8], bool); 10] = [
     (param::VOLUME, b"Volume", true),
     (param::TEMPO, b"Tempo", false),
     (param::PLAYING, b"Playing", false),
@@ -72,6 +108,7 @@ const PARAMS: [(u32, &[u8], bool); 9] = [
     (param::MIDI2, b"MIDI 2.0", false),
     (param::THREAD_IN_PROCESS, b"Thread in process", false),
     (param::THREAD_ON_MAIN, b"Thread on main", false),
+    (param::NOTIFY, b"Notify", true),
 ];
 
 /// One `f64` slot per parameter, shared by every thread of the plugin.
@@ -80,6 +117,13 @@ pub struct Shared {
     values: [AtomicU64; PARAMS.len()],
     /// The host's `thread-check`, if it offers one.
     thread_check: Option<HostThreadCheck>,
+    /// The host's `latency` and `params`, if it offers them.
+    host_latency: Option<HostLatency>,
+    host_params: Option<HostParams>,
+    /// The latency `latency.get` reports.
+    latency: AtomicU32,
+    /// The next flush writes `VOLUME` out ([`notify::FLUSH`]).
+    flush_output: AtomicBool,
 }
 
 impl Shared {
@@ -119,6 +163,40 @@ impl Shared {
         }
         false
     }
+
+    /// The [`notify`] action a host event asks for, if it sets `NOTIFY`.
+    fn notify_of(event: &UnknownEvent) -> Option<f64> {
+        match event.as_core_event()? {
+            CoreEventSpace::ParamValue(e) if e.param_id()?.get() == param::NOTIFY => Some(e.value()),
+            _ => None,
+        }
+    }
+
+    /// The output half of a [`notify`] action, on whichever thread: the edit's
+    /// events, and `VOLUME` if a flush was requested. Allocates nothing.
+    fn write_output(&self, action: Option<f64>, output: &mut OutputEvents) {
+        if action == Some(notify::EDIT) {
+            let volume = param::VOLUME.into();
+            let _ = output.try_push(ParamGestureBeginEvent::new(0, volume));
+            for (t, value) in notify::EDIT_VALUES.into_iter().enumerate() {
+                let event =
+                    ParamValueEvent::new(t as u32 + 1, volume, Pckn::match_all(), value, Cookie::empty());
+                let _ = output.try_push(event);
+                self.set(param::VOLUME, value);
+            }
+            let _ = output.try_push(ParamGestureEndEvent::new(notify::EDIT_VALUES.len() as u32 + 1, volume));
+        }
+        if self.flush_output.swap(false, Ordering::AcqRel) {
+            let value = self.get(param::VOLUME).unwrap_or(1.0);
+            let _ = output.try_push(ParamValueEvent::new(
+                0,
+                param::VOLUME.into(),
+                Pckn::match_all(),
+                value,
+                Cookie::empty(),
+            ));
+        }
+    }
 }
 
 impl PluginShared<'_> for Shared {}
@@ -135,7 +213,8 @@ impl Plugin for TestGain {
         builder
             .register::<PluginAudioPorts>()
             .register::<PluginParams>()
-            .register::<PluginState>();
+            .register::<PluginState>()
+            .register::<PluginLatency>();
     }
 }
 
@@ -146,8 +225,14 @@ impl DefaultPluginFactory for TestGain {
     }
 
     fn new_shared(host: HostSharedHandle<'_>) -> Result<Shared, PluginError> {
-        let shared =
-            Shared { values: Default::default(), thread_check: host.get_extension() };
+        let shared = Shared {
+            values: Default::default(),
+            thread_check: host.get_extension(),
+            host_latency: host.get_extension(),
+            host_params: host.get_extension(),
+            latency: AtomicU32::new(0),
+            flush_output: AtomicBool::new(false),
+        };
         shared.set(param::VOLUME, 1.0);
         shared.set(param::PLAYING, -1.0);
         Ok(shared)
@@ -218,6 +303,11 @@ impl<'a> PluginAudioProcessor<'a, Shared, MainThread<'a>> for Processor<'a> {
                 if self.shared.handle(event) {
                     self.host.request_callback();
                 }
+                let action = Shared::notify_of(event);
+                if action == Some(notify::RESTART) {
+                    self.host.request_restart();
+                }
+                self.shared.write_output(action, events.output);
                 if let Some(CoreEventSpace::Midi2(midi)) = event.as_core_event() {
                     self.shared.set(param::MIDI2, f64::from(midi.data()[0]));
                 }
@@ -237,10 +327,12 @@ impl<'a> PluginAudioProcessor<'a, Shared, MainThread<'a>> for Processor<'a> {
 }
 
 impl PluginAudioProcessorParams for Processor<'_> {
-    fn flush(&mut self, input: &InputEvents, _output: &mut OutputEvents) {
+    fn flush(&mut self, input: &InputEvents, output: &mut OutputEvents) {
         for event in input {
             self.shared.handle(event);
+            self.shared.write_output(Shared::notify_of(event), output);
         }
+        self.shared.write_output(None, output);
     }
 }
 
@@ -288,7 +380,9 @@ impl PluginMainThreadParams for MainThread<'_> {
         let Some(&(id, name, writable)) = PARAMS.get(index as usize) else {
             return;
         };
-        let (flags, min, max) = if writable {
+        let (flags, min, max) = if id == param::NOTIFY {
+            (ParamInfoFlags::IS_STEPPED, 0.0, notify::CLEAR)
+        } else if writable {
             (ParamInfoFlags::IS_AUTOMATABLE, 0.0, 1.0)
         } else {
             (ParamInfoFlags::IS_READONLY, f64::MIN, f64::MAX)
@@ -301,7 +395,7 @@ impl PluginMainThreadParams for MainThread<'_> {
             module: b"",
             min_value: min,
             max_value: max,
-            default_value: if writable { 1.0 } else { 0.0 },
+            default_value: if id == param::VOLUME { 1.0 } else { 0.0 },
         })
     }
 
@@ -322,10 +416,49 @@ impl PluginMainThreadParams for MainThread<'_> {
         text.to_str().ok()?.trim().parse().ok()
     }
 
-    fn flush(&mut self, input: &InputEvents, _output: &mut OutputEvents) {
+    /// The main-thread flush also runs the actions only the main thread may.
+    fn flush(&mut self, input: &InputEvents, output: &mut OutputEvents) {
         for event in input {
             self.shared.handle(event);
+            let action = Shared::notify_of(event);
+            match action {
+                Some(notify::LATENCY) => {
+                    self.shared.latency.store(notify::LATENCY_SAMPLES, Ordering::Relaxed);
+                    if let Some(latency) = self.shared.host_latency {
+                        latency.changed(&mut self.host);
+                    }
+                }
+                Some(notify::RESCAN) => {
+                    if let Some(params) = self.shared.host_params {
+                        params.rescan(&mut self.host, ParamRescanFlags::VALUES | ParamRescanFlags::TEXT);
+                    }
+                }
+                Some(notify::FLUSH) => {
+                    self.shared.flush_output.store(true, Ordering::Release);
+                    if let Some(params) = self.shared.host_params {
+                        params.request_flush(&self.host);
+                    }
+                    continue; // the flush the host was asked for writes it
+                }
+                Some(notify::RESTART) => self.host.request_restart(),
+                Some(notify::CLEAR) => {
+                    if let Some(params) = self.shared.host_params {
+                        params.clear(&mut self.host, param::VOLUME.into(), ParamClearFlags::ALL);
+                    }
+                }
+                _ => {}
+            }
+            self.shared.write_output(action, output);
         }
+        if input.is_empty() {
+            self.shared.write_output(None, output);
+        }
+    }
+}
+
+impl PluginLatencyImpl for MainThread<'_> {
+    fn get(&mut self) -> u32 {
+        self.shared.latency.load(Ordering::Relaxed)
     }
 }
 

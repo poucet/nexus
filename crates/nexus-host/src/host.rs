@@ -304,9 +304,19 @@ pub trait PluginInstance {
     /// Close the plugin's editor if it is open. Idempotent.
     fn close_editor(&mut self) {}
 
-    /// Run any main-thread work the plugin has requested (drives its GUI). Call
-    /// regularly (every ~10 ms) from the owning thread while a plugin is loaded.
+    /// Run any main-thread work the plugin has requested (drives its GUI), and
+    /// collect what the plugin told the host since the last pump into the
+    /// queue [`take_notices`](Self::take_notices) empties. Call regularly
+    /// (every ~10 ms) from the owning thread while a plugin is loaded.
     fn pump(&mut self) {}
+
+    /// What the plugin told the host (see [`Notice`](crate::Notice)), in
+    /// order, as collected by [`pump`](Self::pump) and by owning-thread calls
+    /// that run the plugin (an inactive CLAP plugin's `set_param` flushes its
+    /// parameters, and the plugin may answer). Empties the queue.
+    fn take_notices(&mut self) -> Vec<crate::Notice> {
+        Vec::new()
+    }
 }
 
 /// The **audio-thread** half of a plugin: realtime block processing.

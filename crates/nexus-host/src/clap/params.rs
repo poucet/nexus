@@ -11,6 +11,8 @@ use clack_host::prelude::*;
 use clack_host::utils::Cookie;
 
 use crate::clap::host::NexusHost;
+use crate::clap::output::NoticeWriter;
+use crate::notice::Notice;
 use crate::host::ParamInfo;
 
 /// Enumerate the plugin's parameters. Empty if it has no `params` extension.
@@ -80,11 +82,16 @@ pub fn text_to_value(
     params.text_to_value(&mut handle, id, &c_str)
 }
 
-/// Set parameter `id` to the plain `value` on an **inactive** plugin, through
-/// the `params` extension's main-thread `flush`. Returns `false` when the
-/// plugin is active (the change then goes through the audio thread) or has no
-/// `params` extension.
-pub fn flush_inactive(instance: &mut PluginInstance<NexusHost>, id: u32, value: f64) -> bool {
+/// Flush an **inactive** plugin's parameters through the `params` extension's
+/// main-thread `flush`: deliver `change` (parameter id, plain value), if any,
+/// and keep what the plugin writes back as notices in `out` (values it
+/// changed itself, gestures). Returns `false` when the plugin is active (the
+/// change then goes through the audio thread) or has no `params` extension.
+pub fn flush_inactive(
+    instance: &mut PluginInstance<NexusHost>,
+    change: Option<(u32, f64)>,
+    out: &mut Vec<Notice>,
+) -> bool {
     let Some(params) = instance.plugin_handle().get_extension::<PluginParams>() else {
         return false;
     };
@@ -92,14 +99,17 @@ pub fn flush_inactive(instance: &mut PluginInstance<NexusHost>, id: u32, value: 
         return false;
     };
     let mut events = EventBuffer::with_capacity(1);
-    events.push(&ParamValueEvent::new(
-        0,
-        ClapId::from(id),
-        Pckn::match_all(),
-        value,
-        Cookie::empty(),
-    ));
-    params.flush(&mut handle, &events.as_input(), &mut OutputEvents::void());
+    if let Some((id, value)) = change {
+        events.push(&ParamValueEvent::new(
+            0,
+            ClapId::from(id),
+            Pckn::match_all(),
+            value,
+            Cookie::empty(),
+        ));
+    }
+    let mut writer = NoticeWriter(out);
+    params.flush(&mut handle, &events.as_input(), &mut OutputEvents::from(&mut writer));
     true
 }
 

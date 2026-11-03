@@ -10,7 +10,7 @@ fn a_clack_plugin_in_this_process_loads_and_plays() {
     let mut instance = Host::new()
         .load_clack::<nexus_test_plugin::Entry>(nexus_test_plugin::ID)
         .expect("the in-process entry loads");
-    assert_eq!(instance.params().len(), 9);
+    assert_eq!(instance.params().len(), 10);
     instance.set_param(param::VOLUME, 0.25).unwrap();
 
     let mut processor = instance.activate(config(48_000.0)).unwrap();

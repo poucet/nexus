@@ -22,6 +22,7 @@ use crate::clap::process::ClapAudioProcessor;
 use crate::host::{
     AudioConfig, AudioProcessor, EventSupport, HostError, PluginInstance as HostPluginInstance,
 };
+use crate::notice::{Notice, NoticeReceiver};
 
 /// A loaded CLAP plugin (main-thread side).
 pub struct ClapPluginInstance {
@@ -36,6 +37,11 @@ pub struct ClapPluginInstance {
     editor: Option<ClapEditor>,
     /// Parameter change ring producer, created on activate.
     param_producer: Option<rtrb::Producer<crate::host::ParamChange>>,
+    /// Notices collected on this thread, for `take_notices`.
+    notices: Vec<Notice>,
+    /// The audio thread's notices (output events from `process()`), made on
+    /// activate.
+    audio_notices: Option<NoticeReceiver>,
 }
 
 impl ClapPluginInstance {
@@ -84,6 +90,8 @@ impl ClapPluginInstance {
             #[cfg(target_os = "macos")]
             editor: None,
             param_producer: None,
+            notices: Vec::new(),
+            audio_notices: None,
         })
     }
 }
@@ -114,6 +122,10 @@ impl HostPluginInstance for ClapPluginInstance {
 
         let (producer, consumer) = rtrb::RingBuffer::new(1024);
         self.param_producer = Some(producer);
+        // What the last activation's processor wrote is still the host's.
+        self.drain_audio_notices();
+        let (notice_sender, notice_receiver) = crate::notice::ring(crate::notice::RING);
+        self.audio_notices = Some(notice_receiver);
 
         let stopped = self
             .instance
@@ -125,6 +137,7 @@ impl HostPluginInstance for ClapPluginInstance {
             io,
             config.max_block_frames,
             consumer,
+            notice_sender,
             config.sample_rate,
         )))
     }
@@ -156,7 +169,7 @@ impl HostPluginInstance for ClapPluginInstance {
             let change = crate::host::ParamChange { id, value, offset_frames: 0 };
             return change.queue(self.param_producer.as_mut());
         }
-        if crate::clap::params::flush_inactive(&mut self.instance, id, value) {
+        if crate::clap::params::flush_inactive(&mut self.instance, Some((id, value)), &mut self.notices) {
             Ok(())
         } else {
             Err(HostError::Load("plugin has no params extension".into()))
@@ -223,30 +236,60 @@ impl HostPluginInstance for ClapPluginInstance {
 
     fn pump(&mut self) {
         // Service whatever the plugin asked the main thread to do (drives the
-        // editor: callbacks, resize, close).
-        let run_callback =
-            self.instance.access_shared_handler(NexusHostShared::take_callback_request);
+        // editor: callbacks, resize, close) and collect its notices.
+        let requests = self.instance.access_shared_handler(NexusHostShared::take_requests);
         #[allow(unused_mut)]
         let mut closed = false;
         while let Ok(message) = self.messages.try_recv() {
             match message {
-                // The window tracks the plugin view via `fit()` each frame, so
-                // resize requests don't need explicit handling (and acting on
-                // them caused a feedback loop).
-                MainThreadMessage::GuiResize(_) => {}
+                // nexus's own window tracks the plugin view via `fit()` each
+                // frame, so it needs no resize (acting on one caused a
+                // feedback loop); a host that parented the editor does.
+                MainThreadMessage::GuiResize(size) => self.notices.push(Notice::EditorResize {
+                    width: size.width,
+                    height: size.height,
+                }),
                 MainThreadMessage::GuiClosed => closed = true,
+                MainThreadMessage::LatencyChanged => {
+                    let latency = self.latency();
+                    self.notices.push(Notice::Latency(latency));
+                }
+                MainThreadMessage::Rescan(rescan) => self.notices.push(Notice::Rescan(rescan)),
+                MainThreadMessage::ParamCleared(id) => self.notices.push(Notice::ParamCleared(id)),
             }
         }
+        if requests.restart {
+            self.notices.push(Notice::Restart);
+        }
+        // An active plugin is flushed by its next `process()`.
+        if requests.flush && !self.instance.is_active() {
+            crate::clap::params::flush_inactive(&mut self.instance, None, &mut self.notices);
+        }
+        self.drain_audio_notices();
 
         #[cfg(target_os = "macos")]
         if closed {
             self.close_editor();
+            self.notices.push(Notice::EditorClosed);
         } else if let Some(editor) = self.editor.as_ref() {
             editor.fit();
         }
 
-        if run_callback {
+        if requests.callback {
             self.instance.call_on_main_thread_callback();
+        }
+    }
+
+    fn take_notices(&mut self) -> Vec<Notice> {
+        std::mem::take(&mut self.notices)
+    }
+}
+
+impl ClapPluginInstance {
+    /// Move the audio thread's notices into the owning thread's queue.
+    fn drain_audio_notices(&mut self) {
+        if let Some(receiver) = self.audio_notices.as_mut() {
+            receiver.drain_into(&mut self.notices);
         }
     }
 }

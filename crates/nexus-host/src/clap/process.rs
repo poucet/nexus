@@ -17,6 +17,8 @@ use clack_host::prelude::*;
 use clack_host::utils::Cookie;
 
 use crate::clap::host::{AudioThread, NexusHost};
+use crate::clap::output::NoticeWriter;
+use crate::notice::NoticeSender;
 use crate::clap::ports::IoLayout;
 use crate::host::{AudioProcessor, HostError, ParamChange};
 use crate::process::{
@@ -83,6 +85,8 @@ pub struct ClapAudioProcessor {
     events: EventBuffer,
     steady: u64,
     param_consumer: rtrb::Consumer<ParamChange>,
+    /// Where the plugin's output events go, as notices (preallocated).
+    notices: NoticeSender,
     transport: TransportClock,
 }
 
@@ -92,6 +96,7 @@ impl ClapAudioProcessor {
         io: IoLayout,
         max_frames: usize,
         param_consumer: rtrb::Consumer<ParamChange>,
+        notices: NoticeSender,
         sample_rate: f64,
     ) -> Self {
         let input_backing = io
@@ -123,6 +128,7 @@ impl ClapAudioProcessor {
             events: EventBuffer::with_capacity(64),
             steady: 0,
             param_consumer,
+            notices,
             transport: TransportClock::new(sample_rate),
         }
     }
@@ -166,6 +172,7 @@ impl AudioProcessor for ClapAudioProcessor {
             events,
             steady,
             param_consumer,
+            notices,
             transport,
         } = self;
         let max_frames = *max_frames;
@@ -313,7 +320,7 @@ impl AudioProcessor for ClapAudioProcessor {
                 &ins,
                 &mut outs,
                 &input_events,
-                &mut OutputEvents::void(),
+                &mut OutputEvents::from(&mut NoticeWriter(notices)),
                 Some(*steady),
                 transport.as_ref(),
             );

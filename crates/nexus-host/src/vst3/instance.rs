@@ -8,8 +8,11 @@
 
 use std::path::Path;
 
+use crossbeam_channel::Receiver;
+
 use vst3_sdk::Steinberg::Vst::{
-    BusDirection, BusDirections_, BusInfo, ControllerNumbers_, IAudioProcessor,
+    BusDirection, BusDirections_, BusInfo, ControllerNumbers_, IAudioProcessor, IComponentHandler,
+    RestartFlags_,
     IAudioProcessorTrait, IComponent, IComponentTrait, IConnectionPoint, IConnectionPointTrait,
     IEditController, IEditControllerTrait, IMidiMapping, IMidiMappingTrait, IUnitInfoTrait,
     MediaType, MediaTypes_, ParamID, ProcessModes_, ProcessSetup, SpeakerArr,
@@ -21,6 +24,8 @@ use vst3_sdk::{ComPtr, ComWrapper};
 use crate::host::{AudioConfig, AudioProcessor, EventSupport, HostError, PluginInstance};
 #[cfg(target_os = "macos")]
 use crate::vst3::editor::Vst3Editor;
+use crate::notice::Notice;
+use crate::vst3::handler::{HandlerCall, Vst3ComponentHandler};
 use crate::vst3::host_app::Vst3HostApp;
 use crate::vst3::module::{Vst3Factory, Vst3Module};
 use crate::vst3::param_changes::PendingParams;
@@ -51,6 +56,12 @@ pub struct Vst3PluginInstance {
     pending: PendingParams,
     /// Mapping from `(channel, ctrl_number)` to VST3 `ParamID`.
     midi_map: MidiControllerMap,
+    /// The controller's `IComponentHandler`; kept alive here.
+    _handler: ComWrapper<Vst3ComponentHandler>,
+    /// The controller's calls, queued for `pump`.
+    handler_calls: Receiver<HandlerCall>,
+    /// Notices collected on this thread, for `take_notices`.
+    notices: Vec<Notice>,
 }
 
 impl Vst3PluginInstance {
@@ -81,6 +92,13 @@ impl Vst3PluginInstance {
 
         let midi_map = query_midi_mapping(controller.as_ref(), &component);
 
+        let (handler, handler_calls) = Vst3ComponentHandler::new();
+        if let (Some(controller), Some(ptr)) =
+            (&controller, handler.to_com_ptr::<IComponentHandler>())
+        {
+            unsafe { controller.setComponentHandler(ptr.as_ptr()) };
+        }
+
         Ok(Self {
             #[cfg(target_os = "macos")]
             editor: None,
@@ -93,6 +111,9 @@ impl Vst3PluginInstance {
             param_producer: None,
             pending: PendingParams::default(),
             midi_map,
+            _handler: handler,
+            handler_calls,
+            notices: Vec::new(),
         })
     }
 
@@ -105,6 +126,7 @@ impl Vst3PluginInstance {
         self.param_producer = None;
         unsafe {
             if let Some(controller) = &self.controller {
+                controller.setComponentHandler(std::ptr::null_mut());
                 controller.terminate();
             }
             self.component.terminate();
@@ -392,9 +414,30 @@ impl PluginInstance for Vst3PluginInstance {
     }
 
     fn pump(&mut self) {
+        while let Ok(call) = self.handler_calls.try_recv() {
+            match call {
+                HandlerCall::Restart(flags) => {
+                    let processor = &self.processor;
+                    crate::vst3::handler::restart_notices(
+                        flags,
+                        || unsafe { processor.getLatencySamples() },
+                        &mut self.notices,
+                    );
+                    if flags & RestartFlags_::kMidiCCAssignmentChanged != 0 {
+                        self.midi_map =
+                            query_midi_mapping(self.controller.as_ref(), &self.component);
+                    }
+                }
+                HandlerCall::Begin(_) | HandlerCall::Perform(..) | HandlerCall::End(_) => {}
+            }
+        }
         if let Some(editor) = &self.editor {
             editor.fit();
         }
+    }
+
+    fn take_notices(&mut self) -> Vec<Notice> {
+        std::mem::take(&mut self.notices)
     }
 
     fn save_state(&mut self) -> Result<Vec<u8>, HostError> {

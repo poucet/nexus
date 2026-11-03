@@ -18,6 +18,7 @@ pub mod editor_window;
 pub use simply_fugue as fugue;
 pub mod host;
 pub mod midi;
+pub mod notice;
 pub mod preset;
 pub mod process;
 pub mod render;
@@ -31,6 +32,7 @@ pub use host::{
     AudioConfig, AudioProcessor, EventSupport, Host, HostError, ParamChange, ParamInfo,
     PluginDescriptor, PluginFormat, PluginInstance, VoiceInfo,
 };
+pub use notice::{Notice, Rescan};
 pub use preset::Preset;
 pub use vst3::params::Normalizer;
 pub use render::{render_offline, RenderOptions, RenderResult};

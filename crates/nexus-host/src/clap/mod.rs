@@ -10,6 +10,7 @@ pub mod gui;
 pub mod host;
 pub mod info;
 pub mod instance;
+pub mod output;
 pub mod params;
 pub mod ports;
 pub mod probe;

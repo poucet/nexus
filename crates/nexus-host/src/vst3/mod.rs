@@ -11,6 +11,7 @@
 #[cfg(target_os = "macos")]
 pub mod editor;
 pub mod event_list;
+pub mod handler;
 pub mod host_app;
 pub mod instance;
 pub mod module;

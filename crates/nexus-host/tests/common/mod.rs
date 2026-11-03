@@ -23,6 +23,7 @@ pub mod param {
     pub const MIDI2: u32 = 7;
     pub const THREAD_IN_PROCESS: u32 = 8;
     pub const THREAD_ON_MAIN: u32 = 9;
+    pub const NOTIFY: u32 = 10;
 }
 
 /// `crates/nexus-test-plugin`, built once per test process into its own target
