@@ -4,7 +4,8 @@
 
 | Dates | Tag | |
 |---|---|---|
-| 2026-10-25 → … | — | **[Unreleased](#unreleased)** |
+| 2026-11-03 | — | **[v0.7.0](#v070--plugin-notices--editors-a-host-can-embed)** (version set, not tagged) — plugin → host notices (latency, parameter edits and gestures, rescans) on both formats, realtime-safe; editors parented into a host's view |
+| 2026-10-25 → 10-31 | `v0.6.0` | [Upstream fixes for tussen](#v060--upstream-fixes-for-tussen) — `CatalogPaths`, MIDI 2.0 to both formats, CLAP `thread-check`, normalised parameter values, in-process CLAP plugins |
 | 2026-10-25 | `v0.5.0` | [Realtime-safe hosting](#v050--realtime-safe-hosting-re-activation--transport) — no allocation in `process()` on either format, CLAP re-activation and pre-activation params, the transport reaches plugins |
 | 2026-09-01 → 10-25 | `v0.4.0` | [Render parity & VST3 MIDI](#v040--render-parity-vst3-midi-mapping--a-pinned-shared-crate) — `render_audio` renders what the fugue says, VST3 `IMidiMapping` and note expressions, `simply-fugue` from music-rs by tag |
 | 2026-09-01 | `v0.3.0` | [Milestone 0.3: Plugin Wrapper & Automation](#v030--in-daw-wrapper-parameter-automation--cross-platform-linux) — `nexus-wrap` CLAP plugin, realtime parameter ring, Linux/Docker support, AI patch reconstruction design |
@@ -13,7 +14,36 @@
 
 ---
 
-## Unreleased
+## v0.7.0 — Plugin notices & editors a host can embed
+
+**Version `0.7.0`, not tagged** · 2026-11-03 19:56 — fixes `I-107` (tussen's `N12`). Changes the `PluginInstance` API (additions only; `pump` is unchanged).
+
+Gates: `cargo test --workspace --locked` 159 passed / 0 failed / 11 ignored (141 before); `cargo clippy --workspace --all-targets --locked` 20 warnings, none in new code; `NEXUS_REAL_PLUGIN_TEST=1 cargo test -p nexus-host --test realtime` 10 passed, 0 allocations in 2 000 blocks on TAL-Filter-2 and Surge XT Effects, CLAP and VST3, with the output paths live.
+
+#### Editors a host can embed (`I-107`) · 2026-11-03 19:56 · pspoupkv
+
+- **`PluginInstance::open_editor_in(parent: RawWindowHandle) -> EditorSize`** parents the plugin's editor into a view the host owns (macOS: an `NSView`, on the process's main thread); **`editor_size()`** and **`resize_editor(size)`** let the host size it, constrained by the plugin (CLAP `adjust_size`/`set_size`, VST3 `checkSizeConstraint`/`onSize`). `close_editor()` closes either kind. New `nexus_host::EditorSize`.
+- The plugin asking for another size arrives as `Notice::EditorResize` (CLAP `gui.request_resize`; VST3 views now get an `IPlugFrame`, whose `resizeView` nexus accepts). When the user closes nexus's own editor window, `pump` closes the editor and sends `Notice::EditorClosed`; it used to stay attached to a hidden window.
+- Test: a fake `IPlugView` resized both ways.
+
+#### Parameter edits and gestures reach the host (`I-107`) · 2026-11-03 19:51 · pxsnovyp
+
+- **CLAP**: what a plugin writes to `process()`'s and `params.flush`'s output events becomes `Notice::ParamValue { id, value }` (plain), `Notice::GestureBegin(id)` and `Notice::GestureEnd(id)`, in order. On the audio thread the output event list writes straight into a preallocated ring: no allocation, no lock; a full ring (1 024 between two pumps) refuses the event and the drop is logged. `params.request_flush` flushes an inactive plugin on `pump`. clack's core event space does not list the gesture events, so nexus reads them by type.
+- **VST3**: the edit controller gets an `IComponentHandler`. `beginEdit`/`performEdit`/`endEdit` arrive as a gesture with plain values, and each edit is forwarded to the processor (the next block while active, the first block after activation otherwise), which hears of an editor edit only from the host. `process()` hands the plugin a writable `outputParameterChanges`, read back in sample order as plain values, also without allocating.
+- Tests: `tests/notices.rs` (the test plugin's editor drag from `process()` and from the main-thread flush, 100 drags in a row without allocation; a requested flush; notices kept across a re-activation; VST3 output changes without allocation) and unit tests of the handler and output queues.
+
+#### Latency changes, rescans and restarts reach the host (`I-107`) · 2026-11-03 19:47 · ntkmxqzw
+
+- **New `nexus_host::Notice`** (and `Rescan`): what a plugin told its host on its own initiative. `pump()` collects them on the owning thread; **`PluginInstance::take_notices()`** hands them over. The queue holds at most 65 536 (a host that pumps and never takes them drops the rest, logged); nexus-app drops them.
+- **CLAP**: nexus offers the host `latency` (`changed` → `Notice::Latency(samples)`), `params` (`rescan` → `Notice::Rescan`, `clear` → `Notice::ParamCleared`), `audio-ports` and `note-ports` (`rescan` → `Rescan { io }`). `request_restart` is a flag → `Notice::Restart`.
+- **VST3**: `restartComponent` → `Latency` (`kLatencyChanged`, read from `getLatencySamples`), `Restart` (`kReloadComponent`) and one `Rescan` (values, titles, IO, parameter ids, MIDI mapping; nexus re-reads `IMidiMapping` for the next activation).
+- The test plugin gains a writable `NOTIFY` parameter (id 10): set it to an action and it announces a latency change, asks for a rescan, restart, flush or clear, or plays an editor drag on `VOLUME`.
+
+---
+
+## v0.6.0 — Upstream fixes for tussen
+
+**Tagged `v0.6.0` · 2026-10-31 09:26 · nqowlotq** — tussen's `N8`–`N11`, `N13`, `I-99`, `I-105`. The tag's `Cargo.lock` still says 0.5.0, so `--locked` fails at the tag.
 
 #### Load a CLAP plugin built into the process (`N11`) · 2026-10-31 05:54 · nopklkrq
 
