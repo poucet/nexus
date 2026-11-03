@@ -16,7 +16,7 @@ use vst3_sdk::Steinberg::Vst::{
 use vst3_sdk::Steinberg::{int32, kResultOk, tresult};
 use vst3_sdk::{Class, ComWrapper};
 
-use crate::notice::{Notice, Rescan};
+use crate::notice::{Notice, NoticeSink, Rescan};
 use crate::vst3::param_changes::PendingParams;
 use crate::vst3::process::ControllerEdit;
 
@@ -31,6 +31,8 @@ pub enum HandlerCall {
     End(u32),
     /// `restartComponent(flags)`.
     Restart(i32),
+    /// `IPlugFrame::resizeView` from the editor, already accepted.
+    ResizeView(crate::EditorSize),
 }
 
 /// Nexus's `IComponentHandler`.
@@ -43,6 +45,11 @@ impl Vst3ComponentHandler {
     pub fn new() -> (ComWrapper<Vst3ComponentHandler>, Receiver<HandlerCall>) {
         let (calls, receiver) = unbounded();
         (ComWrapper::new(Vst3ComponentHandler { calls }), receiver)
+    }
+
+    /// Where the editor's `IPlugFrame` queues its calls: the same queue.
+    pub fn calls(&self) -> Sender<HandlerCall> {
+        self.calls.clone()
     }
 
     fn queue(&self, call: HandlerCall) -> tresult {
@@ -108,16 +115,16 @@ impl HandlerQueue {
         plain: impl Fn(u32, f64) -> f64,
         latency: impl Fn() -> u32,
         pending: &mut PendingParams,
-        out: &mut Vec<Notice>,
+        out: &mut impl NoticeSink,
     ) -> i32 {
         let mut restarts = 0;
         while let Ok(call) = self.calls.try_recv() {
             match call {
-                HandlerCall::Begin(id) => out.push(Notice::GestureBegin(id)),
-                HandlerCall::End(id) => out.push(Notice::GestureEnd(id)),
+                HandlerCall::Begin(id) => _ = out.notice(Notice::GestureBegin(id)),
+                HandlerCall::End(id) => _ = out.notice(Notice::GestureEnd(id)),
                 HandlerCall::Perform(id, normalized) => {
                     let value = plain(id, normalized);
-                    out.push(Notice::ParamValue { id, value });
+                    out.notice(Notice::ParamValue { id, value });
                     match self.edits.as_mut() {
                         None => pending.set(id, value),
                         Some(ring) => {
@@ -131,6 +138,7 @@ impl HandlerQueue {
                     restart_notices(flags, &latency, out);
                     restarts |= flags;
                 }
+                HandlerCall::ResizeView(size) => _ = out.notice(Notice::EditorResize(size)),
             }
         }
         restarts
@@ -139,14 +147,14 @@ impl HandlerQueue {
 
 /// The notices `restartComponent(flags)` means, in a fixed order: restart,
 /// latency (asked of `latency` only when it changed), then one rescan.
-pub fn restart_notices(flags: i32, latency: impl Fn() -> u32, out: &mut Vec<Notice>) {
+pub fn restart_notices(flags: i32, latency: impl Fn() -> u32, out: &mut impl NoticeSink) {
     use RestartFlags_::*;
     let has = |flag: i32| flags & flag != 0;
     if has(kReloadComponent) {
-        out.push(Notice::Restart);
+        out.notice(Notice::Restart);
     }
     if has(kLatencyChanged) {
-        out.push(Notice::Latency(latency()));
+        out.notice(Notice::Latency(latency()));
     }
     let rescan = Rescan {
         values: has(kParamValuesChanged),
@@ -157,7 +165,7 @@ pub fn restart_notices(flags: i32, latency: impl Fn() -> u32, out: &mut Vec<Noti
         midi_mapping: has(kMidiCCAssignmentChanged),
     };
     if rescan.any() {
-        out.push(Notice::Rescan(rescan));
+        out.notice(Notice::Rescan(rescan));
     }
 }
 

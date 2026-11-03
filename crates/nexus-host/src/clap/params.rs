@@ -12,7 +12,7 @@ use clack_host::utils::Cookie;
 
 use crate::clap::host::NexusHost;
 use crate::clap::output::NoticeWriter;
-use crate::notice::Notice;
+use crate::notice::NoticeQueue;
 use crate::host::ParamInfo;
 
 /// Enumerate the plugin's parameters. Empty if it has no `params` extension.
@@ -90,7 +90,7 @@ pub fn text_to_value(
 pub fn flush_inactive(
     instance: &mut PluginInstance<NexusHost>,
     change: Option<(u32, f64)>,
-    out: &mut Vec<Notice>,
+    out: &mut NoticeQueue,
 ) -> bool {
     let Some(params) = instance.plugin_handle().get_extension::<PluginParams>() else {
         return false;

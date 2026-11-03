@@ -22,7 +22,7 @@ use vst3_sdk::{ComPtr, ComWrapper};
 use crate::host::{AudioConfig, AudioProcessor, EventSupport, HostError, PluginInstance};
 #[cfg(target_os = "macos")]
 use crate::vst3::editor::Vst3Editor;
-use crate::notice::{Notice, NoticeReceiver};
+use crate::notice::{Notice, NoticeQueue, NoticeReceiver};
 use crate::vst3::handler::{HandlerQueue, Vst3ComponentHandler};
 use crate::vst3::host_app::Vst3HostApp;
 use crate::vst3::module::{Vst3Factory, Vst3Module};
@@ -55,11 +55,11 @@ pub struct Vst3PluginInstance {
     /// Mapping from `(channel, ctrl_number)` to VST3 `ParamID`.
     midi_map: MidiControllerMap,
     /// The controller's `IComponentHandler`; kept alive here.
-    _handler: ComWrapper<Vst3ComponentHandler>,
+    handler: ComWrapper<Vst3ComponentHandler>,
     /// The controller's calls, queued for `pump`.
     handler_calls: HandlerQueue,
     /// Notices collected on this thread, for `take_notices`.
-    notices: Vec<Notice>,
+    notices: NoticeQueue,
     /// The audio thread's notices (`outputParameterChanges`), made on activate.
     audio_notices: Option<NoticeReceiver>,
 }
@@ -111,9 +111,9 @@ impl Vst3PluginInstance {
             param_producer: None,
             pending: PendingParams::default(),
             midi_map,
-            _handler: handler,
+            handler,
             handler_calls: HandlerQueue::new(handler_calls),
-            notices: Vec::new(),
+            notices: NoticeQueue::default(),
             audio_notices: None,
         })
     }
@@ -313,7 +313,7 @@ impl PluginInstance for Vst3PluginInstance {
                 .controller
                 .as_ref()
                 .ok_or_else(|| HostError::Load("plugin has no edit controller".into()))?;
-            self.editor = Some(Vst3Editor::open(controller, "Nexus — Plugin")?);
+            self.editor = Some(Vst3Editor::open(controller, "Nexus — Plugin", self.handler.calls())?);
             Ok(())
         }
         #[cfg(not(target_os = "macos"))]
@@ -321,6 +321,53 @@ impl PluginInstance for Vst3PluginInstance {
             Err(HostError::Load(
                 "GUI editor embedding is not supported on this platform".into(),
             ))
+        }
+    }
+
+    fn open_editor_in(
+        &mut self,
+        parent: raw_window_handle::RawWindowHandle,
+    ) -> Result<crate::EditorSize, HostError> {
+        #[cfg(target_os = "macos")]
+        {
+            self.close_editor();
+            let controller = self
+                .controller
+                .as_ref()
+                .ok_or_else(|| HostError::Load("plugin has no edit controller".into()))?;
+            let (editor, size) = Vst3Editor::open_in(controller, parent, self.handler.calls())?;
+            self.editor = Some(editor);
+            Ok(size)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = parent;
+            Err(HostError::Load(
+                "GUI editor embedding is not supported on this platform".into(),
+            ))
+        }
+    }
+
+    fn editor_size(&mut self) -> Option<crate::EditorSize> {
+        #[cfg(target_os = "macos")]
+        {
+            self.editor.as_ref().map(Vst3Editor::size)
+        }
+        #[cfg(not(target_os = "macos"))]
+        None
+    }
+
+    fn resize_editor(&mut self, size: crate::EditorSize) -> Result<crate::EditorSize, HostError> {
+        #[cfg(target_os = "macos")]
+        {
+            let editor =
+                self.editor.as_ref().ok_or_else(|| HostError::Load("no editor is open".into()))?;
+            Ok(editor.resize(size))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = size;
+            Err(HostError::Load("no editor is open".into()))
         }
     }
 
@@ -435,13 +482,16 @@ impl PluginInstance for Vst3PluginInstance {
             self.midi_map = query_midi_mapping(self.controller.as_ref(), &self.component);
         }
         self.drain_audio_notices();
-        if let Some(editor) = &self.editor {
-            editor.fit();
+        // The user closed nexus's window.
+        #[cfg(target_os = "macos")]
+        if self.editor.as_ref().is_some_and(|editor| !editor.fit()) {
+            self.close_editor();
+            self.notices.push(Notice::EditorClosed);
         }
     }
 
     fn take_notices(&mut self) -> Vec<Notice> {
-        std::mem::take(&mut self.notices)
+        self.notices.take()
     }
 
     fn save_state(&mut self) -> Result<Vec<u8>, HostError> {

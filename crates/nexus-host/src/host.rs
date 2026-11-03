@@ -137,6 +137,13 @@ pub struct VoiceInfo {
     pub voice_capacity: u32,
 }
 
+/// A plugin editor's size, in logical pixels (points on macOS).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EditorSize {
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Audio configuration negotiated with a plugin when it is activated. The host
 /// commits to never handing the plugin a block larger than `max_block_frames`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -295,13 +302,50 @@ pub trait PluginInstance {
         None
     }
 
-    /// Open the plugin's editor (in its own window). Returns an error if the
-    /// plugin has no GUI compatible with this host.
+    /// Open the plugin's editor in a window of nexus's own, which follows the
+    /// editor's size. Returns an error if the plugin has no GUI compatible with
+    /// this host. On macOS: the process's main thread.
+    ///
+    /// When the user closes that window, the next [`pump`](Self::pump) closes
+    /// the editor and says so ([`Notice::EditorClosed`](crate::Notice::EditorClosed)).
     fn open_editor(&mut self) -> Result<(), HostError> {
         Err(HostError::Load("plugin has no editor".into()))
     }
 
-    /// Close the plugin's editor if it is open. Idempotent.
+    /// Open the plugin's editor as a child of `parent`, a view the host owns
+    /// (on macOS an `NSView`, given as [`RawWindowHandle::AppKit`]), and return
+    /// its size: the host sizes `parent` to it. On macOS: the process's main
+    /// thread. `parent` must outlive the editor: [`close_editor`](Self::close_editor)
+    /// before the view goes.
+    ///
+    /// Afterwards the plugin may ask for another size
+    /// ([`Notice::EditorResize`](crate::Notice::EditorResize)), and the host may
+    /// resize it ([`resize_editor`](Self::resize_editor)).
+    ///
+    /// [`RawWindowHandle::AppKit`]: raw_window_handle::RawWindowHandle::AppKit
+    fn open_editor_in(
+        &mut self,
+        parent: raw_window_handle::RawWindowHandle,
+    ) -> Result<EditorSize, HostError> {
+        let _ = parent;
+        Err(HostError::Load("plugin has no editor".into()))
+    }
+
+    /// The open editor's size, if one is open.
+    fn editor_size(&mut self) -> Option<EditorSize> {
+        None
+    }
+
+    /// Ask the open editor to take `size` (the host's parent was resized).
+    /// Returns the size the plugin took, which may differ (a fixed-size
+    /// editor keeps its own; one with an aspect ratio rounds): the host sizes
+    /// its parent to that.
+    fn resize_editor(&mut self, size: EditorSize) -> Result<EditorSize, HostError> {
+        let _ = size;
+        Err(HostError::Load("no editor is open".into()))
+    }
+
+    /// Close the plugin's editor if it is open, wherever it is. Idempotent.
     fn close_editor(&mut self) {}
 
     /// Run any main-thread work the plugin has requested (drives its GUI), and

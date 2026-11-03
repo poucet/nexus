@@ -22,7 +22,7 @@ use crate::clap::process::ClapAudioProcessor;
 use crate::host::{
     AudioConfig, AudioProcessor, EventSupport, HostError, PluginInstance as HostPluginInstance,
 };
-use crate::notice::{Notice, NoticeReceiver};
+use crate::notice::{Notice, NoticeQueue, NoticeReceiver};
 
 /// A loaded CLAP plugin (main-thread side).
 pub struct ClapPluginInstance {
@@ -38,7 +38,7 @@ pub struct ClapPluginInstance {
     /// Parameter change ring producer, created on activate.
     param_producer: Option<rtrb::Producer<crate::host::ParamChange>>,
     /// Notices collected on this thread, for `take_notices`.
-    notices: Vec<Notice>,
+    notices: NoticeQueue,
     /// The audio thread's notices (output events from `process()`), made on
     /// activate.
     audio_notices: Option<NoticeReceiver>,
@@ -90,7 +90,7 @@ impl ClapPluginInstance {
             #[cfg(target_os = "macos")]
             editor: None,
             param_producer: None,
-            notices: Vec::new(),
+            notices: NoticeQueue::default(),
             audio_notices: None,
         })
     }
@@ -225,6 +225,49 @@ impl HostPluginInstance for ClapPluginInstance {
         }
     }
 
+    fn open_editor_in(
+        &mut self,
+        parent: raw_window_handle::RawWindowHandle,
+    ) -> Result<crate::EditorSize, HostError> {
+        #[cfg(target_os = "macos")]
+        {
+            self.close_editor();
+            let (editor, size) = ClapEditor::open_in(&mut self.instance, parent)?;
+            self.editor = Some(editor);
+            Ok(size)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = parent;
+            Err(HostError::Load(
+                "GUI editor embedding is not supported on this platform".into(),
+            ))
+        }
+    }
+
+    fn editor_size(&mut self) -> Option<crate::EditorSize> {
+        #[cfg(target_os = "macos")]
+        {
+            self.editor.as_ref()?.size(&mut self.instance)
+        }
+        #[cfg(not(target_os = "macos"))]
+        None
+    }
+
+    fn resize_editor(&mut self, size: crate::EditorSize) -> Result<crate::EditorSize, HostError> {
+        #[cfg(target_os = "macos")]
+        {
+            let editor =
+                self.editor.as_ref().ok_or_else(|| HostError::Load("no editor is open".into()))?;
+            editor.resize(&mut self.instance, size)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = size;
+            Err(HostError::Load("no editor is open".into()))
+        }
+    }
+
     fn close_editor(&mut self) {
         #[cfg(target_os = "macos")]
         {
@@ -245,10 +288,12 @@ impl HostPluginInstance for ClapPluginInstance {
                 // nexus's own window tracks the plugin view via `fit()` each
                 // frame, so it needs no resize (acting on one caused a
                 // feedback loop); a host that parented the editor does.
-                MainThreadMessage::GuiResize(size) => self.notices.push(Notice::EditorResize {
-                    width: size.width,
-                    height: size.height,
-                }),
+                MainThreadMessage::GuiResize(size) => {
+                    self.notices.push(Notice::EditorResize(crate::EditorSize {
+                        width: size.width,
+                        height: size.height,
+                    }))
+                }
                 MainThreadMessage::GuiClosed => closed = true,
                 MainThreadMessage::LatencyChanged => {
                     let latency = self.latency();
@@ -267,12 +312,11 @@ impl HostPluginInstance for ClapPluginInstance {
         }
         self.drain_audio_notices();
 
+        // Closed by the plugin, or by the user closing nexus's window.
         #[cfg(target_os = "macos")]
-        if closed {
+        if self.editor.is_some() && (closed || !self.editor.as_ref().is_some_and(ClapEditor::fit)) {
             self.close_editor();
             self.notices.push(Notice::EditorClosed);
-        } else if let Some(editor) = self.editor.as_ref() {
-            editor.fit();
         }
 
         if requests.callback {
@@ -281,7 +325,7 @@ impl HostPluginInstance for ClapPluginInstance {
     }
 
     fn take_notices(&mut self) -> Vec<Notice> {
-        std::mem::take(&mut self.notices)
+        self.notices.take()
     }
 }
 

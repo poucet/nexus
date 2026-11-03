@@ -56,7 +56,7 @@ pub enum Notice {
     /// `gui.request_resize`, VST3 `IPlugFrame::resizeView`). A host that
     /// parented the editor resizes the parent; nexus's own window follows by
     /// itself.
-    EditorResize { width: u32, height: u32 },
+    EditorResize(crate::EditorSize),
     /// The editor was closed, by the plugin or by the user closing nexus's
     /// window. The editor is gone; open it again to show it.
     EditorClosed,
@@ -121,9 +121,9 @@ pub struct NoticeReceiver {
 impl NoticeReceiver {
     /// Move every queued notice into `out`, in order; logs notices a full ring
     /// dropped since the last call.
-    pub fn drain_into(&mut self, out: &mut Vec<Notice>) {
+    pub fn drain_into(&mut self, out: &mut impl NoticeSink) {
         while let Ok(notice) = self.consumer.pop() {
-            out.push(notice);
+            out.notice(notice);
         }
         let dropped = self.dropped.load(Ordering::Relaxed);
         if dropped > self.reported {
@@ -172,6 +172,46 @@ impl NoticeSink for Vec<Notice> {
     }
 }
 
+/// Notices the owning thread holds until the host takes them.
+pub const QUEUE: usize = 1 << 16;
+
+/// An instance's owning-thread notice queue, behind `take_notices`. Bounded,
+/// so a host that pumps but never takes notices (nexus before `I-107`) does
+/// not grow it without end: past [`QUEUE`] notices new ones are dropped, and
+/// counted in the log.
+#[derive(Debug, Default)]
+pub struct NoticeQueue {
+    notices: Vec<Notice>,
+    dropped: u64,
+}
+
+impl NoticeQueue {
+    /// Keep `notice` (see [`NoticeSink`]).
+    pub fn push(&mut self, notice: Notice) {
+        self.notice(notice);
+    }
+
+    /// Every notice kept, in order; empties the queue.
+    pub fn take(&mut self) -> Vec<Notice> {
+        if self.dropped > 0 {
+            log::warn!("{} plugin notices dropped: {QUEUE} were waiting to be taken", self.dropped);
+            self.dropped = 0;
+        }
+        std::mem::take(&mut self.notices)
+    }
+}
+
+impl NoticeSink for NoticeQueue {
+    fn notice(&mut self, notice: Notice) -> bool {
+        if self.notices.len() >= QUEUE {
+            self.dropped += 1;
+            return false;
+        }
+        self.notices.push(notice);
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,6 +227,16 @@ mod tests {
         assert_eq!(out, [Notice::GestureBegin(0), Notice::GestureBegin(1), Notice::GestureBegin(2)]);
         assert_eq!(rx.dropped(), 2);
         assert!(tx.send(Notice::Restart), "room again once drained");
+    }
+
+    #[test]
+    fn the_queue_is_bounded_and_empties_when_taken() {
+        let mut queue = NoticeQueue::default();
+        for _ in 0..QUEUE + 3 {
+            queue.push(Notice::Restart);
+        }
+        assert_eq!(queue.take().len(), QUEUE);
+        assert!(queue.take().is_empty());
     }
 
     #[test]

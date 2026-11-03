@@ -35,6 +35,9 @@ pub trait EditorWindow: Sized {
     /// itself). Must never resize the plugin's own view.
     fn fit_to_plugin_view(&self);
 
+    /// Whether the window is still open (the user may have closed it).
+    fn is_open(&self) -> bool;
+
     /// Close the window.
     fn close(&self);
 }

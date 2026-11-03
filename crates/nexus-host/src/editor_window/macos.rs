@@ -79,6 +79,12 @@ impl EditorWindow for MacOsEditorWindow {
         }
     }
 
+    /// Closing hides it (`setReleasedWhenClosed(false)`); minimising does too,
+    /// but leaves it miniaturized.
+    fn is_open(&self) -> bool {
+        self.window.isVisible() || self.window.isMiniaturized()
+    }
+
     fn close(&self) {
         self.window.close();
     }

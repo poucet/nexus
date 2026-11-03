@@ -508,6 +508,9 @@ impl eframe::App for NexusApp {
         // Drive the loaded plugin's main-thread work (its GUI).
         if let Some(instance) = self.instance.as_mut() {
             instance.pump();
+            // The app has no use for the plugin's notices yet (its editor
+            // window follows the plugin by itself); drop them.
+            instance.take_notices();
         }
 
         // Keep repainting so held keys track releases.

@@ -29,7 +29,7 @@ pub mod ui;
 pub use discovery::catalog::{CatalogFailure, CatalogPaths, PluginCatalog, PluginRef};
 pub use fugue::{CompositeFugue, FugueDefinition, FugueEvent, TimedFugueEvent};
 pub use host::{
-    AudioConfig, AudioProcessor, EventSupport, Host, HostError, ParamChange, ParamInfo,
+    AudioConfig, AudioProcessor, EditorSize, EventSupport, Host, HostError, ParamChange, ParamInfo,
     PluginDescriptor, PluginFormat, PluginInstance, VoiceInfo,
 };
 pub use notice::{Notice, Rescan};
