@@ -78,24 +78,65 @@ respected to the letter, and `thread-check` is right by construction. The
 original is untouched. It keeps playing until the host has activated the
 replica and swapped the processors, and is then dropped on its own thread.
 
+## The rule for JUCE plugins, and what nexus tells a host
+
+nexus cannot tell whether a binary is JUCE-built, so the rule holds for every
+binary. It costs nothing for a binary with one instance.
+
+`nexus_host::binary` counts the live instances nexus made, per plugin binary:
+
+- `live_instances(path)`: how many are alive;
+- `first_thread(path)`: the thread that made the first of them, i.e. the one
+  that took the count from zero. This is the thread JUCE takes as that
+  binary's message thread.
+
+`PluginInstance::binary()` and `Replica::binary()` give an instance's binary
+(an in-process clack entry counts as this executable).
+
+**The test: an editor on the main thread is safe iff
+`first_thread(binary)` is the main thread.** A host gets there in one of two
+ways:
+
+- **The binary's only instance** (`live_instances == 1`) may move. Drop the
+  original *before* loading its replica on the main thread, so the count
+  reaches zero and the main thread becomes the first thread. That costs a gap
+  in the audio. A gapless move (replica first, then the swap) leaves the
+  first thread on the worker for as long as any instance lives, and
+  `first_thread` says so.
+- **Otherwise keep every instance of that binary on the main thread**, and
+  load new ones there. Move them all there once, the same way, so the count
+  passes through zero. After that, editors open in place, with no move.
+
+The counts cover nexus's own instances only. A plugin that makes JUCE
+objects outside an instance (a JUCE plugin's factory does, briefly, inside
+`createInstance`) is not counted.
+
 ## What it costs
 
-`NEXUS_REAL_PLUGIN_TEST=1 cargo test -p nexus-host --test replica`, M-series
-Mac, three runs. The plugins are JUCE-built, release binaries in a debug test
-build. Each binary was already loaded once by the probe, so even the "first
-instance" is warm on dlopen.
+A switch is `replica()` on one thread, then `Replica::load()` and `activate()`
+on the other. Measured with
+`NEXUS_REAL_PLUGIN_TEST=1 cargo test -p nexus-host --test replica a_switch -- --nocapture`
+(M-series Mac, debug test build, release plugin binaries):
 
-| plugin | first instance | second instance | `replica()` | `Replica::load` |
+- each figure is the median of 9 switches back and forth;
+- the range is across four runs (the slowest ran right after a clippy build);
+- the binary was already loaded, which is the editor case: its instance is
+  alive.
+
+| plugin | switch | `replica()` | `load()` with state | `activate()` |
 |---|---|---|---|---|
-| TAL-Filter-2 CLAP | 5.6–8.9 ms | 1.4–3.7 ms | ≤ 0.1 ms | 1.2–3.2 ms |
-| TAL-Filter-2 VST3 | 3.4–7.8 ms | 2.8–7.2 ms | ≤ 0.1 ms | 2.8–6.7 ms |
-| Surge XT Effects CLAP | 19–33 ms | 9–110 ms | ≤ 3.4 ms | 8.7–30 ms |
-| Surge XT Effects VST3 | 9–15 ms | 9–16 ms | ≤ 0.1 ms | 8.5–11 ms |
+| nexus.test.gain (CLAP) | 0.1 ms | 0.0 ms | 0.1 ms | 0.0 ms |
+| TAL-Filter-2 CLAP | 1.3–2.8 ms | ≤ 0.1 ms | 1.3–2.8 ms | 0.0 ms |
+| TAL-Filter-2 VST3 | 5.4–5.9 ms | 0.0 ms | 2.7–3.0 ms | 2.7–2.9 ms |
+| Surge XT Effects CLAP | 8.7–15.2 ms | ≤ 0.1 ms | 8.7–15.0 ms | ≤ 0.1 ms |
+| Surge XT Effects VST3 | 8.8–15.3 ms | ≤ 0.1 ms | 8.6–15.0 ms | 0.1–0.2 ms |
 
-A replica costs about one instance load on the receiving thread; the state
-itself is negligible. Opening an editor therefore pays one load on the main
-thread, once per open, at a click. The plugins tussen measured at 300 ms
-pay that 300 ms there.
+A switch costs about one instance load (plus a VST3 activation) on the
+receiving thread; the state itself is negligible. So opening an editor pays
+one load on the main thread, once per open, at a click. A plugin tussen
+measured at 300 ms to load stalls the main thread for about that long there.
+The very first instance of a binary also pays dlopen; that was not measured
+here, because the test probes every binary first.
 
 ## Found on the way
 
@@ -104,6 +145,9 @@ pay that 300 ms there.
   `param_value` says 0.3 and the saved state says 0. Any state-based copy
   loses it, a saved project included. Make the replica after a block, or
   while active.
+- **Surge XT Effects CLAP** sets its empty FX slot's parameter values when
+  activated, on whichever thread. The tests compare values before
+  activating.
 - A state round trip is not byte-stable on Surge XT, so the tests compare
   parameter values, not bytes.
 - The VST3 controller's own state matters: Surge XT VST3 restores a

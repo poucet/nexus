@@ -23,6 +23,7 @@ use crate::host::{
     AudioConfig, AudioProcessor, EventSupport, HostError, PluginInstance as HostPluginInstance,
 };
 use crate::notice::{Notice, NoticeQueue, NoticeReceiver};
+use crate::binary::Lease;
 use crate::replica::{Origin, Replica};
 
 /// A loaded CLAP plugin (main-thread side).
@@ -45,6 +46,9 @@ pub struct ClapPluginInstance {
     /// The audio thread's notices (output events from `process()`), made on
     /// activate.
     audio_notices: Option<NoticeReceiver>,
+    /// This instance in its binary's live count; last, so it is given back
+    /// after the plugin is gone.
+    lease: Lease,
 }
 
 impl ClapPluginInstance {
@@ -87,6 +91,8 @@ impl ClapPluginInstance {
         let plugin_id = CString::new(plugin_id)
             .map_err(|_| HostError::Load("plugin id contains a NUL byte".into()))?;
 
+        // Counted before the plugin is made: it may be the binary's first.
+        let lease = Lease::take(&origin.binary());
         let (sender, receiver) = unbounded();
         let instance = PluginInstance::<NexusHost>::new(
             |_| NexusHostShared::new(sender.clone()),
@@ -107,6 +113,7 @@ impl ClapPluginInstance {
             param_producer: None,
             notices: NoticeQueue::default(),
             audio_notices: None,
+            lease,
         })
     }
 }
@@ -345,6 +352,10 @@ impl HostPluginInstance for ClapPluginInstance {
 
     /// The state is everything: an inactive plugin applied every value set on
     /// it at once (`params.flush`).
+    fn binary(&self) -> Option<&Path> {
+        Some(self.lease.path())
+    }
+
     fn replica(&mut self) -> Result<Replica, HostError> {
         Ok(Replica::of(self.origin.clone(), self, None, Vec::new()))
     }

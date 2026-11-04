@@ -9,6 +9,7 @@
 //! The design intentionally hides the differences between plugin formats behind
 //! a single interface so that callers never need to branch on VST3 vs. CLAP.
 
+pub mod binary;
 pub mod clap;
 pub mod discovery;
 /// A native window that hosts a plugin's editor view (shared by the CLAP and

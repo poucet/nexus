@@ -7,86 +7,12 @@
 
 mod common;
 
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use common::{Blocks, config, param, real_plugins, test_plugin};
+use common::{Blocks, Owner, config, param, real_plugins, test_plugin};
 use nexus_host::process::Event;
-use nexus_host::{AudioProcessor, Host, Notice, PluginInstance, PluginRef, Replica};
+use nexus_host::{AudioProcessor, Host, Notice, PluginInstance};
 use nexus_test_plugin::notify;
-
-type Job = Box<dyn FnOnce(&mut Option<Box<dyn PluginInstance>>) + Send>;
-
-/// A thread that owns at most one instance and runs jobs on it, as a host's
-/// plugin thread or main thread would.
-struct Owner {
-    jobs: Option<mpsc::Sender<Job>>,
-    thread: Option<std::thread::JoinHandle<()>>,
-}
-
-impl Owner {
-    fn spawn(name: &str) -> Self {
-        let (jobs, rx) = mpsc::channel::<Job>();
-        let thread = std::thread::Builder::new()
-            .name(name.into())
-            .spawn(move || {
-                let mut slot = None;
-                for job in rx {
-                    job(&mut slot);
-                }
-                drop(slot); // on this thread, as the formats ask
-            })
-            .unwrap();
-        Self { jobs: Some(jobs), thread: Some(thread) }
-    }
-
-    /// Run `f` on this thread with its instance slot, and wait for the answer.
-    fn run<R: Send + 'static>(
-        &self,
-        f: impl FnOnce(&mut Option<Box<dyn PluginInstance>>) -> R + Send + 'static,
-    ) -> R {
-        let (tx, rx) = mpsc::channel();
-        let job: Job = Box::new(move |slot| tx.send(f(slot)).unwrap());
-        self.jobs.as_ref().unwrap().send(job).unwrap();
-        rx.recv().expect("the owner thread answered")
-    }
-
-    /// Run `f` on the instance this thread owns.
-    fn on<R: Send + 'static>(
-        &self,
-        f: impl FnOnce(&mut dyn PluginInstance) -> R + Send + 'static,
-    ) -> R {
-        self.run(|slot| f(slot.as_deref_mut().expect("this thread owns an instance")))
-    }
-
-    /// Make this thread's instance from `replica`.
-    fn take(&self, replica: Replica) {
-        self.run(move |slot| *slot = Some(replica.load().expect("the replica loads")));
-    }
-
-    /// This thread's instance, replicated; the instance stays.
-    fn replica(&self) -> Replica {
-        self.on(|p| p.replica().expect("the instance replicates"))
-    }
-
-    /// Drop this thread's instance (deactivated), on this thread.
-    fn drop_instance(&self) {
-        self.run(|slot| {
-            if let Some(mut p) = slot.take() {
-                p.deactivate();
-            }
-        });
-    }
-}
-
-impl Drop for Owner {
-    fn drop(&mut self) {
-        self.jobs = None;
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
 
 fn set(param_id: u32, value: f64) -> Event {
     Event::ParamValue { param_id, note_id: -1, port_index: -1, channel: -1, key: -1, value }
@@ -198,21 +124,21 @@ fn an_in_process_plugin_replicates_too() {
     assert_eq!(main.on(|p| p.param_value(param::MISPLACED)), Some(0.0));
 }
 
-/// `NEXUS_REAL_PLUGIN_TEST=1`: installed CLAP and VST3 plugins replicate
-/// onto another thread with their state, and what it costs.
+/// What a switch costs, per plugin: the test plugin always, and with
+/// `NEXUS_REAL_PLUGIN_TEST=1` installed CLAP and VST3 plugins too. A switch
+/// is the replica on one thread, then its load and activation on the other;
+/// timed over [`SWITCHES`] moves back and forth, with the state checked on
+/// every move.
 #[test]
-fn installed_plugins_replicate_onto_another_thread() {
-    for plugin in real_plugins() {
+fn a_switch_keeps_the_values_and_costs_about_one_load() {
+    for plugin in std::iter::once(test_plugin()).chain(real_plugins()) {
         let name = plugin.path.file_name().unwrap().to_string_lossy().into_owned();
-        let worker = Owner::spawn("worker");
-        let main = Owner::spawn("main");
-
-        let cold = load_on(&worker, &plugin);
-        let warm = load_on(&main, &plugin); // a second instance: the binary is loaded
-        main.drop_instance();
+        let threads = [Owner::spawn("worker"), Owner::spawn("main")];
+        let plugin_ = plugin.clone();
+        threads[0].run(move |slot| *slot = Some(Host::new().load(&plugin_).unwrap()));
 
         // A value off its default, on the plugin's own curve.
-        worker.on(|p| {
+        threads[0].on(|p| {
             let param = p
                 .params()
                 .into_iter()
@@ -220,34 +146,50 @@ fn installed_plugins_replicate_onto_another_thread() {
                 .expect("a continuous parameter");
             p.set_param_normalized(param.id, 0.3).unwrap();
         });
-        // The same replica made on the worker itself: the one on another
-        // thread must give the same values.
-        let same_thread = worker.on(|p| values(p.replica().unwrap().load().unwrap().as_mut()));
+        let mut steps = [Vec::new(), Vec::new(), Vec::new()]; // replica, load, activate
+        for n in 0..SWITCHES {
+            let (from, to) = (&threads[n % 2], &threads[1 - n % 2]);
+            // The same replica made on the thread it comes from: the one on
+            // the other thread must give the same values. (A state round
+            // trip need not be byte-equal: Surge XT's is not.)
+            let expected = from.on(|p| values(p.replica().unwrap().load().unwrap().as_mut()));
+            let started = Instant::now();
+            let replica = from.replica();
+            steps[0].push(started.elapsed());
+            let started = Instant::now();
+            to.take(replica);
+            steps[1].push(started.elapsed());
+            // Before activating: Surge XT Effects CLAP sets its empty FX
+            // slot's values when activated, whichever thread it is on.
+            assert_values_eq(&to.on(values), &expected, &name);
+            let activate = to.on(|p| {
+                let started = Instant::now();
+                let processor = p.activate(config(48_000.0)).unwrap();
+                let took = started.elapsed();
+                drop(processor);
+                p.deactivate();
+                took
+            });
+            steps[2].push(activate);
+            from.drop_instance();
+        }
 
-        let started = Instant::now();
-        let replica = worker.replica();
-        let saved = started.elapsed();
-        let started = Instant::now();
-        main.take(replica);
-        let loaded = started.elapsed();
-
-        let there = main.on(values);
-        assert_values_eq(&there, &same_thread, &name);
-        // And back to the worker (a state round trip need not be byte-equal:
-        // Surge XT's is not).
-        let back = main.replica();
-        worker.drop_instance();
-        worker.take(back);
-        assert_values_eq(&worker.on(values), &there, &name);
-
+        let [replica, load, activate] = steps.map(median);
         eprintln!(
-            "{name}: cold load {}, second instance {}; replica {} + load with state {}",
-            ms(cold),
-            ms(warm),
-            ms(saved),
-            ms(loaded)
+            "{name}: a switch {} (median of {SWITCHES}): replica {}, load with state {}, activate {}",
+            ms(replica + load + activate),
+            ms(replica),
+            ms(load),
+            ms(activate)
         );
     }
+}
+
+const SWITCHES: usize = 9;
+
+fn median(mut v: Vec<Duration>) -> Duration {
+    v.sort();
+    v[v.len() / 2]
 }
 
 /// Every writable parameter's value.
@@ -261,15 +203,6 @@ fn assert_values_eq(there: &[(u32, f64)], here: &[(u32, f64)], name: &str) {
     for ((id, a), (_, b)) in there.iter().zip(here) {
         assert!((a - b).abs() < 1e-6, "{name}: parameter {id} is {a} there, {b} here");
     }
-}
-
-fn load_on(owner: &Owner, plugin: &PluginRef) -> Duration {
-    let plugin = plugin.clone();
-    owner.run(move |slot| {
-        let started = Instant::now();
-        *slot = Some(Host::new().load(&plugin).unwrap());
-        started.elapsed()
-    })
 }
 
 fn ms(d: Duration) -> String {

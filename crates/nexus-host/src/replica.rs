@@ -37,6 +37,17 @@ pub(crate) enum Origin {
     },
 }
 
+impl Origin {
+    /// The plugin binary: the bundle, or this executable for an in-process
+    /// entry (what [`crate::binary`] counts).
+    pub(crate) fn binary(&self) -> PathBuf {
+        match self {
+            Origin::Bundle { path, .. } => path.clone(),
+            Origin::Clack { .. } => std::env::current_exe().unwrap_or_default(),
+        }
+    }
+}
+
 /// A plugin instance as it is now, to be made again on another thread:
 /// `Send`, unlike the instance. Made by [`PluginInstance::replica`]; turned
 /// into an instance by [`load`](Self::load), on the thread that will own it.
@@ -107,6 +118,13 @@ impl Replica {
             instance.set_param(id, value)?;
         }
         Ok(instance)
+    }
+
+    /// The plugin binary the replica loads: ask
+    /// [`binary::live_instances`](crate::binary::live_instances) before
+    /// loading it on another thread (see [`crate::binary`]).
+    pub fn binary(&self) -> PathBuf {
+        self.origin.binary()
     }
 
     /// The plugin's state, if it has one.

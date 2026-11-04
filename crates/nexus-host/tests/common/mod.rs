@@ -6,10 +6,12 @@ use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 
 use nexus_host::process::{AudioBuffer, EventBuffer, ProcessBlock};
 use nexus_host::{
     AudioConfig, AudioProcessor, Host, PluginDescriptor, PluginFormat, PluginInstance, PluginRef,
+    Replica,
 };
 
 /// The parameter ids of `nexus.test.gain` (crates/nexus-test-plugin).
@@ -188,4 +190,77 @@ pub fn real_plugins() -> Vec<PluginRef> {
         }
     }
     out
+}
+
+type Job = Box<dyn FnOnce(&mut Option<Box<dyn PluginInstance>>) + Send>;
+
+/// A thread that owns at most one instance and runs jobs on it, as a host's
+/// plugin thread or main thread would.
+pub struct Owner {
+    jobs: Option<mpsc::Sender<Job>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Owner {
+    pub fn spawn(name: &str) -> Self {
+        let (jobs, rx) = mpsc::channel::<Job>();
+        let thread = std::thread::Builder::new()
+            .name(name.into())
+            .spawn(move || {
+                let mut slot = None;
+                for job in rx {
+                    job(&mut slot);
+                }
+                drop(slot); // on this thread, as the formats ask
+            })
+            .unwrap();
+        Self { jobs: Some(jobs), thread: Some(thread) }
+    }
+
+    /// Run `f` on this thread with its instance slot, and wait for the answer.
+    pub fn run<R: Send + 'static>(
+        &self,
+        f: impl FnOnce(&mut Option<Box<dyn PluginInstance>>) -> R + Send + 'static,
+    ) -> R {
+        let (tx, rx) = mpsc::channel();
+        let job: Job = Box::new(move |slot| tx.send(f(slot)).unwrap());
+        self.jobs.as_ref().unwrap().send(job).unwrap();
+        rx.recv().expect("the owner thread answered")
+    }
+
+    /// Run `f` on the instance this thread owns.
+    pub fn on<R: Send + 'static>(
+        &self,
+        f: impl FnOnce(&mut dyn PluginInstance) -> R + Send + 'static,
+    ) -> R {
+        self.run(|slot| f(slot.as_deref_mut().expect("this thread owns an instance")))
+    }
+
+    /// Make this thread's instance from `replica`.
+    pub fn take(&self, replica: Replica) {
+        self.run(move |slot| *slot = Some(replica.load().expect("the replica loads")));
+    }
+
+    /// This thread's instance, replicated; the instance stays.
+    pub fn replica(&self) -> Replica {
+        self.on(|p| p.replica().expect("the instance replicates"))
+    }
+
+    /// Drop this thread's instance (deactivated), on this thread.
+    pub fn drop_instance(&self) {
+        self.run(|slot| {
+            if let Some(mut p) = slot.take() {
+                p.deactivate();
+            }
+        });
+    }
+}
+
+impl Drop for Owner {
+    fn drop(&mut self) {
+        self.jobs = None;
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }

@@ -171,7 +171,9 @@ pub struct PresetInfo {
 ///
 /// An instance never changes thread. To have the plugin on another one (on
 /// the main thread while its editor is open, say), make a
-/// [`replica`](Self::replica) and [`load`](crate::Replica::load) it there.
+/// [`replica`](Self::replica) and [`load`](crate::Replica::load) it there —
+/// for a JUCE plugin only when no other instance of its binary is alive
+/// elsewhere ([`crate::binary`] says).
 ///
 /// Holds the owning-thread concerns (params, state, editor — added per aspect)
 /// and produces the realtime audio half via [`activate`](Self::activate). This
@@ -373,6 +375,14 @@ pub trait PluginInstance {
     /// replica's processor, and is then dropped here, on its own thread.
     fn replica(&mut self) -> Result<crate::Replica, HostError> {
         Err(HostError::Load("this instance cannot be made again on another thread".into()))
+    }
+
+    /// The plugin binary this instance came from, as
+    /// [`binary::live_instances`](crate::binary::live_instances) and
+    /// [`binary::first_thread`](crate::binary::first_thread) count it: a host
+    /// asks before moving the instance (see [`crate::binary`]).
+    fn binary(&self) -> Option<&std::path::Path> {
+        None
     }
 }
 

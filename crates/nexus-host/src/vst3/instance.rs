@@ -23,6 +23,7 @@ use crate::host::{AudioConfig, AudioProcessor, EventSupport, HostError, PluginIn
 #[cfg(target_os = "macos")]
 use crate::vst3::editor::Vst3Editor;
 use crate::notice::{Notice, NoticeQueue, NoticeReceiver};
+use crate::binary::Lease;
 use crate::replica::{Origin, Replica};
 use crate::vst3::handler::{HandlerQueue, Vst3ComponentHandler};
 use crate::vst3::host_app::Vst3HostApp;
@@ -65,12 +66,17 @@ pub struct Vst3PluginInstance {
     audio_notices: Option<NoticeReceiver>,
     /// What made it, for [`replica`](PluginInstance::replica).
     origin: Origin,
+    /// This instance in its binary's live count; last, so it is given back
+    /// after the plugin is gone.
+    lease: Lease,
 }
 
 impl Vst3PluginInstance {
     /// Load the `.vst3` bundle at `path` and instantiate the audio class whose
     /// hex-encoded class UID is `plugin_id` (as produced by the probe).
     pub fn load(path: &Path, plugin_id: &str) -> Result<Self, HostError> {
+        // Counted before the plugin is made: it may be the binary's first.
+        let lease = Lease::take(path);
         let module = Vst3Factory::load(path)?.host();
         let cid = parse_cid(plugin_id)
             .ok_or_else(|| HostError::Load(format!("invalid VST3 class id: {plugin_id}")))?;
@@ -123,6 +129,7 @@ impl Vst3PluginInstance {
                 path: path.to_path_buf(),
                 id: plugin_id.into(),
             },
+            lease,
         })
     }
 
@@ -538,6 +545,10 @@ impl PluginInstance for Vst3PluginInstance {
     /// The component's state, the edit controller's own (`getState`: what its
     /// editor keeps beside the parameters), and the values set while inactive,
     /// which the processor has not heard of yet.
+    fn binary(&self) -> Option<&Path> {
+        Some(self.lease.path())
+    }
+
     fn replica(&mut self) -> Result<Replica, HostError> {
         let controller = self.save_controller_state();
         let pending = self.pending.values();
