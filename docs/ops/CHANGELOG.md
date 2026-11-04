@@ -4,6 +4,7 @@
 
 | Dates | Tag | |
 |---|---|---|
+| 2026-11-04 | — | **[v0.8.0](#v080--a-plugin-made-again-on-another-thread)** (version set, not tagged) — `PluginInstance::replica` / `Replica::load`: a plugin re-created on another owning thread from its state, so it can run off the main thread except while its editor is open; `nexus_host::binary` says when that is safe for a JUCE plugin |
 | 2026-11-03 | — | **[v0.7.0](#v070--plugin-notices--editors-a-host-can-embed)** (version set, not tagged) — plugin → host notices (latency, parameter edits and gestures, rescans) on both formats, realtime-safe; editors parented into a host's view |
 | 2026-10-25 → 10-31 | `v0.6.0` | [Upstream fixes for tussen](#v060--upstream-fixes-for-tussen) — `CatalogPaths`, MIDI 2.0 to both formats, CLAP `thread-check`, normalised parameter values, in-process CLAP plugins |
 | 2026-10-25 | `v0.5.0` | [Realtime-safe hosting](#v050--realtime-safe-hosting-re-activation--transport) — no allocation in `process()` on either format, CLAP re-activation and pre-activation params, the transport reaches plugins |
@@ -11,6 +12,28 @@
 | 2026-09-01 | `v0.3.0` | [Milestone 0.3: Plugin Wrapper & Automation](#v030--in-daw-wrapper-parameter-automation--cross-platform-linux) — `nexus-wrap` CLAP plugin, realtime parameter ring, Linux/Docker support, AI patch reconstruction design |
 | 2026-08-26 → 09-01 | `v0.2.0` | [Milestone 0.2: State Tools & AI Sampler](#v020--state-tools--ai-sampler) — MCP server, driver-free offline rendering, Fugue sequencing, codecs |
 | 2026-06-01 → 08-26 | `v0.1.0` | [Milestone 0.1: Load & Hear](#v010--load--hear) — CLAP/VST3 hosting engine + standalone egui app |
+
+---
+
+## v0.8.0 — A plugin made again on another thread
+
+**Version `0.8.0`, not tagged** · 2026-11-04 23:25 — for tussen's `DEC-181` (plugins off the main thread, except while an editor is open). Adds to the `PluginInstance` API; nothing changes for existing callers.
+
+Gates: `cargo test --workspace --locked` 167 passed / 0 failed / 11 ignored (159 before); `cargo clippy --workspace --all-targets --locked` 20 warnings, none in new code; `NEXUS_REAL_PLUGIN_TEST=1 cargo test -p nexus-host --test replica` 3 passed (TAL-Filter-2, Surge XT Effects, CLAP and VST3).
+
+#### When moving a JUCE plugin is safe · 2026-11-04 23:31 · wszpvmmt
+
+- **New `nexus_host::binary`**: `live_instances(path)` (the instances nexus made of that plugin binary that are still alive, on any thread) and `first_thread(path)` (the thread that made the first of them, which a JUCE plugin on macOS takes as its message thread). **`PluginInstance::binary()`** and **`Replica::binary()`** name an instance's binary; an in-process clack entry is this executable.
+- The rule, in `binary`'s docs and the research note: an editor on the main thread is safe iff `first_thread` of its binary is the main thread. The binary's only instance gets there by dropping the original before loading its replica (a gap in the audio). Otherwise the host keeps every instance of that binary on the main thread and loads new ones there.
+- Measured, a switch (`replica` + `load` + `activate`, median of 9): nexus.test.gain 0.1 ms, TAL-Filter-2 CLAP 1.3–2.8 ms, TAL-Filter-2 VST3 5.4–5.9 ms, Surge XT Effects CLAP 8.7–15.2 ms, VST3 8.8–15.3 ms (four runs).
+- Tests: `tests/binary.rs`, and `tests/replica.rs` times the switch for the test plugin always and for installed plugins with `NEXUS_REAL_PLUGIN_TEST=1`; a unit test of the count.
+
+#### A plugin made again on another owning thread · 2026-11-04 23:25 · ttknutwr
+
+- **`PluginInstance::replica() -> Replica`** and **`Replica::load()`**. A `Replica` is `Send` and holds what made the instance (its bundle and id, or an in-process clack entry), its state, a VST3 edit controller's own state, and values set on an inactive VST3 instance that its state does not hold yet. `load()` on another thread makes a new instance owned by that thread. The original is untouched: it can keep playing until the host swaps in the replica's processor, then the host drops it on its own thread. New `nexus_host::Replica` (`replica` module).
+- An instance itself never changes thread. CLAP's main thread is "the same OS thread throughout the lifetime of the plug-in". VST3 has one UI thread. JUCE on macOS fixes its message thread when a binary's first object is created. A JUCE plugin's editor therefore reports its edits only if no other instance of that binary was alive on another thread when the replica was made. The evidence and the measured cost (about one instance load) are in [research/owning-thread-replicas.md](../research/owning-thread-replicas.md).
+- The test plugin gains a fake editor (`gui`, embedded; read-only `EDITOR`, id 11, says what `thread-check` said at `gui.create`) and a `MISPLACED` counter (id 12) of main-thread calls made where `thread-check` said otherwise. It has 12 parameters now.
+- Tests: `tests/replica.rs`. A plugin loaded on one thread is replicated onto a second while still playing; its editor opens there and an edit is made in it. The processors are swapped, and it goes back with the edit. `thread-check` names each copy's own thread and nothing is misplaced. Also an in-process plugin. Unit tests: what a replica carries.
 
 ---
 
