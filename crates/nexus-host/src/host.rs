@@ -169,6 +169,10 @@ pub struct PresetInfo {
 /// keep its plugins on a thread of their own), except for the editor:
 /// [`open_editor`](Self::open_editor) on macOS needs the process's main thread.
 ///
+/// An instance never changes thread. To have the plugin on another one (on
+/// the main thread while its editor is open, say), make a
+/// [`replica`](Self::replica) and [`load`](crate::Replica::load) it there.
+///
 /// Holds the owning-thread concerns (params, state, editor — added per aspect)
 /// and produces the realtime audio half via [`activate`](Self::activate). This
 /// mirrors how both CLAP (clack) and VST3 split a plugin: a non-`Send`
@@ -360,6 +364,15 @@ pub trait PluginInstance {
     /// parameters, and the plugin may answer). Empties the queue.
     fn take_notices(&mut self) -> Vec<crate::Notice> {
         Vec::new()
+    }
+
+    /// This instance as it is now (its state, and values set while inactive),
+    /// as a `Send` [`Replica`](crate::Replica) another thread turns into an
+    /// instance of its own with [`Replica::load`](crate::Replica::load). This
+    /// instance is untouched: it can keep playing until the host swaps in the
+    /// replica's processor, and is then dropped here, on its own thread.
+    fn replica(&mut self) -> Result<crate::Replica, HostError> {
+        Err(HostError::Load("this instance cannot be made again on another thread".into()))
     }
 }
 

@@ -293,6 +293,11 @@ impl PendingParams {
         self.changes.clear();
     }
 
+    /// Every pending value, in the order each was first set.
+    pub fn values(&self) -> Vec<(u32, f64)> {
+        self.changes.iter().map(|c| (c.id, c.value)).collect()
+    }
+
     pub fn len(&self) -> usize {
         self.changes.len()
     }
@@ -415,6 +420,7 @@ mod tests {
         pending.set(3, 0.2);
         pending.set(7, 0.9); // replaces 0.1, keeps 7's place
         assert_eq!(pending.len(), 2);
+        assert_eq!(pending.values(), [(7, 0.9), (3, 0.2)], "read, not taken");
 
         let (_producer, mut consumer) = pending.ring(1024);
         assert!(pending.is_empty(), "handed over");

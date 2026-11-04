@@ -18,7 +18,12 @@
 //!   announce a latency change, ask for a rescan, a flush or a restart, clear a
 //!   parameter, or play back an editor drag on `VOLUME` (gesture begin, three
 //!   values, gesture end) as output events, from `process()` or from the
-//!   main-thread `flush`.
+//!   main-thread `flush`;
+//! - **has a fake editor** (`gui`, embedded, any API): it draws nothing and
+//!   never touches the parent it is given, but reports what `thread-check`
+//!   said when it was created ([`param::EDITOR`]); and it counts the
+//!   main-thread calls during which `thread-check` said this was not the
+//!   main thread ([`param::MISPLACED`]).
 #![deny(unsafe_code)]
 
 use std::ffi::CStr;
@@ -30,6 +35,7 @@ use clack_extensions::audio_ports::{
     AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, AudioPortType, PluginAudioPorts,
     PluginAudioPortsImpl,
 };
+use clack_extensions::gui::{GuiConfiguration, GuiSize, PluginGui, PluginGuiImpl, Window};
 use clack_extensions::latency::{HostLatency, PluginLatency, PluginLatencyImpl};
 use clack_extensions::params::{
     HostParams, ParamClearFlags, ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter,
@@ -72,7 +78,16 @@ pub mod param {
     /// Writable: set it to a [`notify`](super::notify) action and the plugin
     /// tells the host something.
     pub const NOTIFY: u32 = 10;
+    /// What the host's `thread-check` said inside the last `gui.create` (as
+    /// [`THREAD_IN_PROCESS`]); 0 before any.
+    pub const EDITOR: u32 = 11;
+    /// How many main-thread calls (state, parameters, `gui`,
+    /// `on_main_thread`) ran where `thread-check` said not the main thread.
+    pub const MISPLACED: u32 = 12;
 }
+
+/// The fake editor's size.
+pub const EDITOR_SIZE: (u32, u32) = (320, 200);
 
 /// What setting [`param::NOTIFY`] makes the plugin do.
 pub mod notify {
@@ -98,7 +113,7 @@ pub mod notify {
 }
 
 /// `(id, name, writable)`, in `params` index order.
-const PARAMS: [(u32, &[u8], bool); 10] = [
+const PARAMS: [(u32, &[u8], bool); 12] = [
     (param::VOLUME, b"Volume", true),
     (param::TEMPO, b"Tempo", false),
     (param::PLAYING, b"Playing", false),
@@ -109,6 +124,8 @@ const PARAMS: [(u32, &[u8], bool); 10] = [
     (param::THREAD_IN_PROCESS, b"Thread in process", false),
     (param::THREAD_ON_MAIN, b"Thread on main", false),
     (param::NOTIFY, b"Notify", true),
+    (param::EDITOR, b"Editor", false),
+    (param::MISPLACED, b"Misplaced", false),
 ];
 
 /// One `f64` slot per parameter, shared by every thread of the plugin.
@@ -151,6 +168,16 @@ impl Shared {
         let audio = check.is_audio_thread(host).unwrap_or(false);
         let main = check.is_main_thread(host).unwrap_or(false);
         f64::from(u8::from(audio) + 2 * u8::from(main))
+    }
+
+    /// Count a main-thread call made where `thread-check` says this is not
+    /// the main thread ([`param::MISPLACED`]).
+    fn on_main(&self, host: &HostSharedHandle) {
+        let verdict = self.thread(host);
+        if (0.0..2.0).contains(&verdict) {
+            let n = self.get(param::MISPLACED).unwrap_or(0.0);
+            self.set(param::MISPLACED, n + 1.0);
+        }
     }
 
     /// Apply a host `ParamValue` event to `VOLUME`; true if it was one.
@@ -214,7 +241,8 @@ impl Plugin for TestGain {
             .register::<PluginAudioPorts>()
             .register::<PluginParams>()
             .register::<PluginState>()
-            .register::<PluginLatency>();
+            .register::<PluginLatency>()
+            .register::<PluginGui>();
     }
 }
 
@@ -346,6 +374,7 @@ pub struct MainThread<'a> {
 
 impl<'a> PluginMainThread<'a, Shared> for MainThread<'a> {
     fn on_main_thread(&mut self) {
+        self.shared.on_main(&self.host);
         self.shared.set(param::THREAD_ON_MAIN, self.shared.thread(&self.host));
         let n = self.shared.get(param::CALLBACKS).unwrap_or(0.0);
         self.shared.set(param::CALLBACKS, n + 1.0);
@@ -400,6 +429,7 @@ impl PluginMainThreadParams for MainThread<'_> {
     }
 
     fn get_value(&mut self, id: ClapId) -> Option<f64> {
+        self.shared.on_main(&self.host);
         self.shared.get(id.get())
     }
 
@@ -418,6 +448,7 @@ impl PluginMainThreadParams for MainThread<'_> {
 
     /// The main-thread flush also runs the actions only the main thread may.
     fn flush(&mut self, input: &InputEvents, output: &mut OutputEvents) {
+        self.shared.on_main(&self.host);
         for event in input {
             self.shared.handle(event);
             let action = Shared::notify_of(event);
@@ -464,15 +495,74 @@ impl PluginLatencyImpl for MainThread<'_> {
 
 impl PluginStateImpl for MainThread<'_> {
     fn save(&mut self, output: &mut OutputStream) -> Result<(), PluginError> {
+        self.shared.on_main(&self.host);
         let volume = self.shared.get(param::VOLUME).unwrap_or(1.0);
         output.write_all(&volume.to_le_bytes())?;
         Ok(())
     }
 
     fn load(&mut self, input: &mut InputStream) -> Result<(), PluginError> {
+        self.shared.on_main(&self.host);
         let mut buf = [0; 8];
         input.read_exact(&mut buf)?;
         self.shared.set(param::VOLUME, f64::from_le_bytes(buf));
+        Ok(())
+    }
+}
+
+/// The fake editor: embedded only, any windowing API; it keeps nothing of
+/// the parent and draws nothing.
+impl PluginGuiImpl for MainThread<'_> {
+    fn is_api_supported(&mut self, configuration: GuiConfiguration) -> bool {
+        self.shared.on_main(&self.host);
+        !configuration.is_floating
+    }
+
+    fn get_preferred_api(&mut self) -> Option<GuiConfiguration<'_>> {
+        None
+    }
+
+    fn create(&mut self, configuration: GuiConfiguration) -> Result<(), PluginError> {
+        self.shared.on_main(&self.host);
+        if configuration.is_floating {
+            return Err(PluginError::Message("embedded only"));
+        }
+        self.shared.set(param::EDITOR, self.shared.thread(&self.host));
+        Ok(())
+    }
+
+    fn destroy(&mut self) {
+        self.shared.on_main(&self.host);
+    }
+
+    fn set_scale(&mut self, _scale: f64) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn get_size(&mut self) -> Option<GuiSize> {
+        self.shared.on_main(&self.host);
+        Some(GuiSize { width: EDITOR_SIZE.0, height: EDITOR_SIZE.1 })
+    }
+
+    fn set_size(&mut self, _size: GuiSize) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn set_parent(&mut self, _window: Window) -> Result<(), PluginError> {
+        self.shared.on_main(&self.host);
+        Ok(())
+    }
+
+    fn set_transient(&mut self, _window: Window) -> Result<(), PluginError> {
+        Ok(())
+    }
+
+    fn show(&mut self) -> Result<(), PluginError> {
+        self.shared.on_main(&self.host);
+        Ok(())
+    }
+
+    fn hide(&mut self) -> Result<(), PluginError> {
         Ok(())
     }
 }

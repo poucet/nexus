@@ -22,6 +22,7 @@ pub mod notice;
 pub mod preset;
 pub mod process;
 pub mod render;
+pub mod replica;
 pub mod vst3;
 #[cfg(feature = "ui")]
 pub mod ui;
@@ -34,5 +35,6 @@ pub use host::{
 };
 pub use notice::{Notice, Rescan};
 pub use preset::Preset;
+pub use replica::Replica;
 pub use vst3::params::Normalizer;
 pub use render::{render_offline, RenderOptions, RenderResult};

@@ -23,6 +23,7 @@ use crate::host::{AudioConfig, AudioProcessor, EventSupport, HostError, PluginIn
 #[cfg(target_os = "macos")]
 use crate::vst3::editor::Vst3Editor;
 use crate::notice::{Notice, NoticeQueue, NoticeReceiver};
+use crate::replica::{Origin, Replica};
 use crate::vst3::handler::{HandlerQueue, Vst3ComponentHandler};
 use crate::vst3::host_app::Vst3HostApp;
 use crate::vst3::module::{Vst3Factory, Vst3Module};
@@ -62,6 +63,8 @@ pub struct Vst3PluginInstance {
     notices: NoticeQueue,
     /// The audio thread's notices (`outputParameterChanges`), made on activate.
     audio_notices: Option<NoticeReceiver>,
+    /// What made it, for [`replica`](PluginInstance::replica).
+    origin: Origin,
 }
 
 impl Vst3PluginInstance {
@@ -115,6 +118,11 @@ impl Vst3PluginInstance {
             handler_calls: HandlerQueue::new(handler_calls),
             notices: NoticeQueue::default(),
             audio_notices: None,
+            origin: Origin::Bundle {
+                format: crate::PluginFormat::Vst3,
+                path: path.to_path_buf(),
+                id: plugin_id.into(),
+            },
         })
     }
 
@@ -523,6 +531,41 @@ impl PluginInstance for Vst3PluginInstance {
             if let Some(ptr) = stream.to_com_ptr::<IBStream>() {
                 unsafe { controller.setComponentState(ptr.as_ptr()) };
             }
+        }
+        Ok(())
+    }
+
+    /// The component's state, the edit controller's own (`getState`: what its
+    /// editor keeps beside the parameters), and the values set while inactive,
+    /// which the processor has not heard of yet.
+    fn replica(&mut self) -> Result<Replica, HostError> {
+        let controller = self.save_controller_state();
+        let pending = self.pending.values();
+        Ok(Replica::of(self.origin.clone(), self, controller, pending))
+    }
+}
+
+impl Vst3PluginInstance {
+    /// The edit controller's own state, if it has a controller that keeps one.
+    fn save_controller_state(&mut self) -> Option<Vec<u8>> {
+        let controller = self.controller.as_ref()?;
+        let stream = HostStream::empty();
+        let ptr = stream.to_com_ptr::<IBStream>()?;
+        let result = unsafe { controller.getState(ptr.as_ptr()) };
+        (result == kResultOk).then(|| stream.to_vec())
+    }
+
+    /// Restore what [`save_controller_state`](Self::save_controller_state)
+    /// read, after the component's state.
+    pub(crate) fn load_controller_state(&mut self, data: &[u8]) -> Result<(), HostError> {
+        let Some(controller) = &self.controller else { return Ok(()) };
+        let stream = HostStream::from_bytes(data);
+        let ptr = stream
+            .to_com_ptr::<IBStream>()
+            .ok_or_else(|| HostError::Preset("could not create state stream".into()))?;
+        let result = unsafe { controller.setState(ptr.as_ptr()) };
+        if result != kResultOk {
+            return Err(HostError::Preset(format!("controller setState failed ({result})")));
         }
         Ok(())
     }

@@ -23,9 +23,12 @@ use crate::host::{
     AudioConfig, AudioProcessor, EventSupport, HostError, PluginInstance as HostPluginInstance,
 };
 use crate::notice::{Notice, NoticeQueue, NoticeReceiver};
+use crate::replica::{Origin, Replica};
 
 /// A loaded CLAP plugin (main-thread side).
 pub struct ClapPluginInstance {
+    /// What made it, for [`replica`](HostPluginInstance::replica).
+    origin: Origin,
     /// The loaded bundle, kept alive for as long as the instance.
     _entry: PluginEntry,
     /// The clack plugin instance.
@@ -52,7 +55,12 @@ impl ClapPluginInstance {
         // scanning the standard plugin directories.
         let entry = unsafe { PluginEntry::load(path) }
             .map_err(|e| HostError::Load(format!("{}: {e}", path.display())))?;
-        Self::from_entry(entry, plugin_id, &path.display().to_string())
+        let origin = Origin::Bundle {
+            format: crate::PluginFormat::Clap,
+            path: path.to_path_buf(),
+            id: plugin_id.into(),
+        };
+        Self::from_entry(entry, plugin_id, &path.display().to_string(), origin)
     }
 
     /// Instantiate `plugin_id` from a CLAP entry built into this process with
@@ -65,11 +73,17 @@ impl ClapPluginInstance {
             .map_err(|_| HostError::Load("executable path contains a NUL byte".into()))?;
         let entry = PluginEntry::load_from_clack::<E>(&path)
             .map_err(|e| HostError::Load(format!("in-process entry: {e}")))?;
-        Self::from_entry(entry, plugin_id, "in-process entry")
+        let origin = Origin::Clack { load: Self::load_clack::<E>, id: plugin_id.into() };
+        Self::from_entry(entry, plugin_id, "in-process entry", origin)
     }
 
     /// Instantiate `plugin_id` from a loaded `entry`; `what` names it in errors.
-    fn from_entry(entry: PluginEntry, plugin_id: &str, what: &str) -> Result<Self, HostError> {
+    fn from_entry(
+        entry: PluginEntry,
+        plugin_id: &str,
+        what: &str,
+        origin: Origin,
+    ) -> Result<Self, HostError> {
         let plugin_id = CString::new(plugin_id)
             .map_err(|_| HostError::Load("plugin id contains a NUL byte".into()))?;
 
@@ -84,6 +98,7 @@ impl ClapPluginInstance {
         .map_err(|e| HostError::Load(format!("{what}: {e}")))?;
 
         Ok(Self {
+            origin,
             _entry: entry,
             instance,
             messages: receiver,
@@ -326,6 +341,12 @@ impl HostPluginInstance for ClapPluginInstance {
 
     fn take_notices(&mut self) -> Vec<Notice> {
         self.notices.take()
+    }
+
+    /// The state is everything: an inactive plugin applied every value set on
+    /// it at once (`params.flush`).
+    fn replica(&mut self) -> Result<Replica, HostError> {
+        Ok(Replica::of(self.origin.clone(), self, None, Vec::new()))
     }
 }
 
