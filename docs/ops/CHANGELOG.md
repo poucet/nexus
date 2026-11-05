@@ -4,6 +4,7 @@
 
 | Dates | Tag | |
 |---|---|---|
+| 2026-11-05 | — | **[v0.8.1](#v081--a-replica-a-host-can-load-again)** (version set, not tagged) — `Replica` is `Clone`: a host keeps a copy and loads it again after a failed load |
 | 2026-11-04 | — | **[v0.8.0](#v080--a-plugin-made-again-on-another-thread)** (version set, not tagged) — `PluginInstance::replica` / `Replica::load`: a plugin re-created on another owning thread from its state, so it can run off the main thread except while its editor is open; `nexus_host::binary` says when that is safe for a JUCE plugin |
 | 2026-11-03 | — | **[v0.7.0](#v070--plugin-notices--editors-a-host-can-embed)** (version set, not tagged) — plugin → host notices (latency, parameter edits and gestures, rescans) on both formats, realtime-safe; editors parented into a host's view |
 | 2026-10-25 → 10-31 | `v0.6.0` | [Upstream fixes for tussen](#v060--upstream-fixes-for-tussen) — `CatalogPaths`, MIDI 2.0 to both formats, CLAP `thread-check`, normalised parameter values, in-process CLAP plugins |
@@ -12,6 +13,19 @@
 | 2026-09-01 | `v0.3.0` | [Milestone 0.3: Plugin Wrapper & Automation](#v030--in-daw-wrapper-parameter-automation--cross-platform-linux) — `nexus-wrap` CLAP plugin, realtime parameter ring, Linux/Docker support, AI patch reconstruction design |
 | 2026-08-26 → 09-01 | `v0.2.0` | [Milestone 0.2: State Tools & AI Sampler](#v020--state-tools--ai-sampler) — MCP server, driver-free offline rendering, Fugue sequencing, codecs |
 | 2026-06-01 → 08-26 | `v0.1.0` | [Milestone 0.1: Load & Hear](#v010--load--hear) — CLAP/VST3 hosting engine + standalone egui app |
+
+---
+
+## v0.8.1 — A replica a host can load again
+
+**Version `0.8.1`, not tagged** · 2026-11-05 05:50 — for tussen, which loses a plugin's slot when a replica's load fails on the other thread. Additive: `Replica::load` is unchanged.
+
+Gates: `cargo test --workspace --locked` 168 passed / 0 failed / 11 ignored (167 before); `cargo clippy --workspace --all-targets --locked` 20 warnings, none in new code.
+
+#### A replica is `Clone` · 2026-11-05 05:50 · moooymrq
+
+- **`nexus_host::Replica` derives `Clone`.** A host keeps a clone before handing one to `load()`, and loads the clone if the load fails, or loads one replica more than once. A replica is plain data: what made the instance (a bundle path and id, or an in-process entry's loader function), the plugin's state, a VST3 edit controller's state and pending values. It holds no handle to the original instance, a plugin, a COM object or a file, so a clone shares nothing with it.
+- Tests: `tests/replica.rs` loses the test plugin's binary between a replica and its load, so the load fails, then loads the clone with the state once the binary is back. A unit test checks a clone carries the VST3 controller state and pending values. There is no VST3 test plugin to load one with.
 
 ---
 
