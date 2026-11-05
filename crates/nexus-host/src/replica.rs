@@ -61,6 +61,12 @@ impl Origin {
 /// audio processors), an open editor, notices not yet taken, and changes still
 /// on an active instance's parameter ring (the plugin has not seen them, so
 /// its state does not hold them: make the replica after the next block).
+///
+/// `Clone`: it is plain data (what to load, and bytes and values to give it),
+/// holding no handle to the original or to any plugin. A host keeps a clone
+/// to try again when [`load`](Self::load) fails, or loads one replica more
+/// than once.
+#[derive(Clone)]
 pub struct Replica {
     origin: Origin,
     state: Option<Vec<u8>>,
@@ -219,5 +225,12 @@ mod tests {
         assert_eq!(replica.state(), Some(&[7][..]));
         assert_eq!(replica.controller.as_deref(), Some(&[9][..]));
         assert_eq!(replica.params, [(4, 0.5)]);
+
+        // A clone carries all of it, the VST3 controller's state included
+        // (there is no VST3 test plugin to load it with).
+        let clone = replica.clone();
+        assert_eq!(clone.state(), Some(&[7][..]));
+        assert_eq!(clone.controller.as_deref(), Some(&[9][..]));
+        assert_eq!(clone.params, [(4, 0.5)]);
     }
 }

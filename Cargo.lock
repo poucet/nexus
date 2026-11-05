@@ -2972,7 +2972,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-app"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -2994,7 +2994,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-host"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "base64",
  "clack-extensions",
@@ -3021,7 +3021,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-mcp"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -3043,7 +3043,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-rest"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -3055,7 +3055,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-test-plugin"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "clack-extensions",
  "clack-plugin",
@@ -3063,7 +3063,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-tools"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -3081,7 +3081,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-wrap"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "base64",
  "clack-extensions",
@@ -6150,7 +6150,7 @@ checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
 
 [[package]]
 name = "xtask"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "clap",

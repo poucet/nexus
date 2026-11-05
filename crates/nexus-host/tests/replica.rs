@@ -208,3 +208,51 @@ fn assert_values_eq(there: &[(u32, f64)], here: &[(u32, f64)], name: &str) {
 fn ms(d: Duration) -> String {
     format!("{:.1} ms", d.as_secs_f64() * 1e3)
 }
+
+/// A replica whose load fails can be loaded again: the host keeps a clone
+/// before handing one to `load`. The plugin's binary goes missing between
+/// the replica and its load, so the load fails; once the binary is back, the
+/// clone loads with the state the original had.
+#[test]
+fn a_cloned_replica_loads_after_a_failed_load() {
+    let dir = std::env::temp_dir().join(format!("nexus-replica-retry-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut plugin = test_plugin();
+    let binary = dir.join(plugin.path.file_name().unwrap());
+    std::fs::copy(&plugin.path, &binary).unwrap();
+    plugin.path = binary.clone();
+
+    let worker = Owner::spawn("worker");
+    let main = Owner::spawn("main");
+    worker.run(move |slot| {
+        let mut p = Host::new().load(&plugin).unwrap();
+        p.set_param(param::VOLUME, 0.4).unwrap();
+        *slot = Some(p);
+    });
+    let replica = worker.replica();
+    let kept = replica.clone();
+    assert_eq!(kept.state(), replica.state());
+    assert_eq!(kept.binary(), replica.binary());
+    // The binary goes out from under it (so dyld cannot hand back the
+    // image it already has, the original goes first).
+    worker.drop_instance();
+    let away = dir.join("away");
+    std::fs::rename(&binary, &away).unwrap();
+
+    let failed = main.run(move |_| replica.load().err().map(|e| e.to_string()));
+    assert!(
+        failed.is_some(),
+        "the load fails while the binary is missing"
+    );
+
+    std::fs::rename(&away, &binary).unwrap();
+    main.take(kept);
+    assert_eq!(
+        main.on(|p| p.param_value(param::VOLUME)),
+        Some(0.4),
+        "the clone carries the state"
+    );
+    main.drop_instance();
+    drop((worker, main));
+    let _ = std::fs::remove_dir_all(&dir);
+}
