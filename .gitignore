@@ -20,3 +20,8 @@
 
 # local project rules: may name private infrastructure (e.g. the Linear workspace)
 AGENTS.project.md
+
+# The working system's local links (AGENTS.md and the agent roles, from dev): local setup, never tracked
+/AGENTS.md
+/.claude/agents
+/.pi/agents
