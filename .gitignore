@@ -17,3 +17,6 @@
 
 # JJ workspaces
 /.workspaces/
+
+# local project rules: may name private infrastructure (e.g. the Linear workspace)
+AGENTS.project.md
