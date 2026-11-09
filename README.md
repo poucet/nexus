@@ -1,5 +1,7 @@
 # Nexus
 
+> Nexus is a [simply.audio lab](http://simply.audio) project.
+
 A Rust-native **VST3 / CLAP plugin host**: a hosting-engine library and a
 standalone app that scans, loads, plays, and displays audio plugins.
 
