@@ -14,7 +14,7 @@ that wraps another plugin** (load any wrapped plugin inside a DAW). A
 longer-term direction is an **MCP interface** for inspecting and controlling a
 wrapped plugin's saved state.
 
-**Current focus: 0.2 — *State tools*** — structured, transport-agnostic access to a loaded plugin's stored state (extensible per-plugin codecs, snapshot→tweak→diff investigation loop, REST debug UI first, MCP last). Design: [design/STATE_TOOLS.md](design/STATE_TOOLS.md); board: [ops/BOARD.md](ops/BOARD.md).
+**Current focus: 0.2 — *State tools*** — structured, transport-agnostic access to a loaded plugin's stored state (extensible per-plugin codecs, snapshot→tweak→diff investigation loop, REST debug UI first, MCP last). Design: [design/STATE_TOOLS.md](design/STATE_TOOLS.md).
 
 **0.1 — *Load & Hear* — is complete** (2026-08-26, tagged `v0.1.0`).
 `nexus-app` scans the macOS plugin folders Bitwig/Ableton use, lists every CLAP

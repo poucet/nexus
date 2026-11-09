@@ -59,7 +59,7 @@ RMS do not depend on its length.
   expression column is 0 → 0 and is omitted.
 - **`ParamValue` counts** grow with the tail because a `params` lane is
   re-sampled every 64 frames to the end of the render whether or not it is
-  held — pre-existing, filed in ISSUES.
+  held — pre-existing, filed as an issue.
 - **`Log` moves none of the 12.** No fixture starts a segment with `log` on a
   lane a dummy hears: `cc_lane` and `sampler_doc_cc_points` put `log` on their
   *last* point, which starts no segment. `Log(0.5) = 0.75` (not `√0.5 = 0.707`)
