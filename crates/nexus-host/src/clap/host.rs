@@ -60,7 +60,7 @@ pub fn host_info() -> HostInfo {
     HostInfo::new(
         "Nexus",
         "Simply Chris",
-        "https://github.com/poucet/nexus",
+        "https://github.com/simply-audio/nexus",
         env!("CARGO_PKG_VERSION"),
     )
     .expect("static host info strings are always valid")

@@ -40,7 +40,7 @@ Main-Thread Bridge / Headless Host Engine
 
 ### 1. `play` & `render_audio` (Fugue-Powered Playback & Sampling)
 
-Both take a **`CompositeFugue`** from the shared `simply-fugue` crate (`poucet/music-rs`, `crates/simply-fugue/src/composite.rs`) — the same JSON flux's `render_audio` takes, under the same tool name. (Droplets keeps its own fugue model and is not a consumer; the crate docs say why.)
+Both take a **`CompositeFugue`** from the shared `simply-fugue` crate (`simply-audio/music-rs`, `crates/simply-fugue/src/composite.rs`) — the same JSON flux's `render_audio` takes, under the same tool name. (Droplets keeps its own fugue model and is not a consumer; the crate docs say why.)
 
 - **Note Shorthand**: Array form `[beat, "C3", duration, velocity, channel]` or object form `{beat, note, duration, velocity, channel}`. Supports note names (`"C3"`, `"F#4"`, `"Bb2"`) or MIDI numbers `0..127`.
 - **CC & Parameter Automation**: `ccs` / `params` points `[[beat, value], [beat, value, curve]]` with curves `none` (stepped, **the default**), `linear`, `exp` (`t²`), `log` (`1 − (1 − t)²`). A point's curve shapes the segment that *starts* at it.

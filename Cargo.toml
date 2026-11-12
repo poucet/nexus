@@ -7,7 +7,7 @@ version = "0.8.1"
 edition = "2024"
 license = "MIT"
 authors = ["Christophe Poucet <christophe.poucet@gmail.com>"]
-repository = "https://github.com/poucet/nexus"
+repository = "https://github.com/simply-audio/nexus"
 rust-version = "1.90"
 
 [workspace.dependencies]
@@ -16,12 +16,12 @@ nexus-host = { path = "crates/nexus-host" }
 nexus-tools = { path = "crates/nexus-tools" }
 nexus-rest = { path = "crates/nexus-rest" }
 nexus-mcp = { path = "crates/nexus-mcp" }
-# Shared musical vocabulary from poucet/music-rs, pinned by tag so a
+# Shared musical vocabulary from simply-audio/music-rs, pinned by tag so a
 # `cargo update` never moves it with music-rs main. For local cross-repo
-# development, add a `[patch."https://github.com/poucet/music-rs.git"]` to an
+# development, add a `[patch."https://github.com/simply-audio/music-rs.git"]` to an
 # untracked config (e.g. ~/.cargo/config.toml) — never to the tracked
 # .cargo/config.toml, which a fresh clone must be able to build with.
-simply-fugue = { git = "https://github.com/poucet/music-rs.git", tag = "v1.0.1" }
+simply-fugue = { git = "https://github.com/simply-audio/music-rs.git", tag = "v1.0.1" }
 
 # Shared third-party dependencies are pinned here so every crate in the
 # workspace resolves to the same version.
