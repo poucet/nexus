@@ -4,7 +4,8 @@
 
 | Dates | Tag | |
 |---|---|---|
-| 2026-11-05 | — | **[v0.8.1](#v081--a-replica-a-host-can-load-again)** (version set, to be tagged) — `Replica` is `Clone`: a host keeps a copy and loads it again after a failed load |
+| 2026-11-12 | `v0.8.2` | **[v0.8.2](#v082--simply-fugue-from-music-rs-120)** — `simply-fugue` from music-rs `v1.2.0`; the repo lives at github.com/simply-audio |
+| 2026-11-05 | `v0.8.1` | **[v0.8.1](#v081--a-replica-a-host-can-load-again)** — `Replica` is `Clone`: a host keeps a copy and loads it again after a failed load |
 | 2026-11-04 | `v0.8.0` | **[v0.8.0](#v080--a-plugin-made-again-on-another-thread)** — `PluginInstance::replica` / `Replica::load`: a plugin re-created on another owning thread from its state, so it can run off the main thread except while its editor is open; `nexus_host::binary` says when that is safe for a JUCE plugin |
 | 2026-11-03 | `v0.7.0` | **[v0.7.0](#v070--plugin-notices--editors-a-host-can-embed)** — plugin → host notices (latency, parameter edits and gestures, rescans) on both formats, realtime-safe; editors parented into a host's view |
 | 2026-10-25 → 10-31 | `v0.6.0` | [Upstream fixes for tussen](#v060--upstream-fixes-for-tussen) — `CatalogPaths`, MIDI 2.0 to both formats, CLAP `thread-check`, normalised parameter values, in-process CLAP plugins |
@@ -16,9 +17,22 @@
 
 ---
 
+## v0.8.2 — `simply-fugue` from music-rs 1.2.0
+
+**Version `0.8.2`** · 2026-11-12 22:00 — nothing changes for you in nexus itself; it follows music-rs and the move to github.com/simply-audio.
+
+Gates: `cargo test --workspace` 168 passed / 0 failed / 11 ignored; `cargo clippy --workspace --all-targets` 20 warnings, the same 20 as v0.8.1.
+
+#### `simply-fugue` from music-rs `v1.2.0` · 2026-11-12 22:00 · sqqrmupl
+
+- `simply-fugue` is pinned to music-rs tag `v1.2.0` (was `v1.0.1`); the wire format is unchanged.
+- Git dependencies and links point at https://github.com/simply-audio, where the audio repos now live.
+
+---
+
 ## v0.8.1 — A replica a host can load again
 
-**Version `0.8.1`, to be tagged** · 2026-11-05 05:50 — for tussen, which loses a plugin's slot when a replica's load fails on the other thread. Additive: `Replica::load` is unchanged.
+**Version `0.8.1`** · 2026-11-05 05:50 — for tussen, which loses a plugin's slot when a replica's load fails on the other thread. Additive: `Replica::load` is unchanged.
 
 Gates: `cargo test --workspace --locked` 168 passed / 0 failed / 11 ignored (167 before); `cargo clippy --workspace --all-targets --locked` 20 warnings, none in new code.
 

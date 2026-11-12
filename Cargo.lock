@@ -2328,7 +2328,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.58.0",
+ "windows-core 0.56.0",
 ]
 
 [[package]]
@@ -2972,7 +2972,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-app"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "base64",
@@ -2994,7 +2994,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-host"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "base64",
  "clack-extensions",
@@ -3021,7 +3021,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-mcp"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "async-trait",
  "axum",
@@ -3043,7 +3043,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-rest"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "async-trait",
  "axum",
@@ -3055,7 +3055,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-test-plugin"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "clack-extensions",
  "clack-plugin",
@@ -3063,7 +3063,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-tools"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "async-trait",
  "base64",
@@ -3081,7 +3081,7 @@ dependencies = [
 
 [[package]]
 name = "nexus-wrap"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "base64",
  "clack-extensions",
@@ -4421,8 +4421,8 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simply-fugue"
-version = "1.0.1"
-source = "git+https://github.com/simply-audio/music-rs.git?tag=v1.0.1#90b2d3c16300e1232398d913f1c210c27773a9ff"
+version = "1.2.0"
+source = "git+https://github.com/simply-audio/music-rs.git?tag=v1.2.0#199ac6f920a5f74ee5b5c6d8279311cf1ba2bb8c"
 dependencies = [
  "schemars",
  "serde",
@@ -6150,7 +6150,7 @@ checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
 
 [[package]]
 name = "xtask"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "clap",
